@@ -610,3 +610,7 @@ If you're working in threat intelligence, incident response, or malware research
 ---
 
 **Tags:** `malware-analysis` `reverse-engineering` `python` `security` `ai` `llm` `frida` `claude` `capstone` `yara`
+
+---
+
+**Published on Medium:** https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
