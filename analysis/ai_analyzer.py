@@ -223,8 +223,8 @@ class AIAnalyzer:
 
         # Detected patterns block
         patterns_text = ''
-        if getattr(function, 'patterns', None):
-            lines = [f'  [{p.severity}] {p.name}: {p.evidence}' for p in function.patterns]
+        if getattr(func, 'patterns', None):
+            lines = [f'  [{p.severity}] {p.name}: {p.evidence}' for p in func.patterns]
             patterns_text = '\nPRE-DETECTED PATTERNS:\n' + '\n'.join(lines) + '\n'
 
         return ANALYSIS_TEMPLATE.format(
