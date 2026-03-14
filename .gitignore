@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+traces.db
+*.db-shm
+*.db-wal
+.DS_Store
