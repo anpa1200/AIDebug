@@ -118,11 +118,14 @@ def run_cli(binary_info, disassembler, addresses, store, session_id):
 # Dynamic mode
 # ---------------------------------------------------------------------------
 
-def run_dynamic(binary_info, disassembler, addresses, store, session_id, pid=None, binary_path=None):
+def run_dynamic(binary_info, disassembler, addresses, store, session_id,
+                pid=None, binary_path=None, frida_host=None):
     from debugger import DebugEngine
     from analysis import AIAnalyzer
 
-    engine = DebugEngine()
+    engine = DebugEngine(remote_host=frida_host)
+    if frida_host:
+        print(f"[*] Using remote frida-server at {frida_host}")
     if not engine.is_available:
         print("[!] Frida is not installed or not available. Cannot run dynamic mode.")
         sys.exit(1)
@@ -278,6 +281,9 @@ def main():
     parser.add_argument("--mode",           choices=["static", "dynamic"], default="static",
                         help="Analysis mode (default: static)")
     parser.add_argument("--pid",            type=int, help="PID to attach (dynamic mode)")
+    parser.add_argument("--frida-host",     default=None,
+                        help="Remote frida-server host[:port] (e.g. 192.168.56.101 or 192.168.56.101:27042). "
+                             "Use this to attach to a VM/sandbox while keeping API traffic on the host.")
     parser.add_argument("--no-tui",         action="store_true", help="CLI output, no TUI")
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
     parser.add_argument("--session",        type=int, help="Session ID for reporting commands")
@@ -327,7 +333,8 @@ def main():
 
     if args.mode == "dynamic":
         run_dynamic(binary_info, disassembler, addresses, store, session_id,
-                    pid=args.pid, binary_path=args.binary)
+                    pid=args.pid, binary_path=args.binary,
+                    frida_host=args.frida_host)
     elif args.no_tui or wants_report:
         # With reporting flags, always run CLI analysis first so there is data
         run_cli(binary_info, disassembler, addresses, store, session_id)

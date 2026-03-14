@@ -17,7 +17,11 @@ from .snapshot import FunctionSnapshot, MemoryDiff
 
 class DebugEngine:
 
-    def __init__(self):
+    def __init__(self, remote_host: str = None):
+        """
+        remote_host: 'host:port' of a remote frida-server (e.g. '192.168.56.101:27042').
+                     Leave None to use the local Frida device.
+        """
         self._session   = None
         self._pid: Optional[int] = None
         self._hooks:    dict = {}       # address -> {entry_cb, exit_cb, script}
@@ -26,6 +30,7 @@ class DebugEngine:
         self._network_events: list = []
         self._unpack_callbacks: list = []
         self._lock = threading.Lock()
+        self._remote_host = remote_host  # None = local
         self._available = self._probe_frida()
 
     # ------------------------------------------------------------------
@@ -39,9 +44,9 @@ class DebugEngine:
     def spawn(self, binary_path: str, args: list = None) -> Optional[int]:
         if not self._available:
             return None
-        import frida
         try:
-            pid = frida.spawn([binary_path] + (args or []))
+            device = self._get_device()
+            pid = device.spawn([binary_path] + (args or []))
             self._pid = pid
             self._do_attach(pid)
             return pid
@@ -127,10 +132,20 @@ class DebugEngine:
         except ImportError:
             return False
 
-    def _do_attach(self, pid: int) -> bool:
+    def _get_device(self):
+        """Return the Frida device to use (local or remote)."""
         import frida
+        if self._remote_host:
+            host = self._remote_host
+            if ':' not in host:
+                host = f'{host}:27042'
+            return frida.get_device_manager().add_remote_device(host)
+        return frida.get_local_device()
+
+    def _do_attach(self, pid: int) -> bool:
         try:
-            self._session = frida.attach(pid)
+            device = self._get_device()
+            self._session = device.attach(pid)
             self._session.on('detached', lambda reason, crash: print(f'[DebugEngine] detached: {reason}'))
             return True
         except Exception as e:
