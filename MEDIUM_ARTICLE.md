@@ -12,6 +12,26 @@ This article walks you through what the tool does, how it works architecturally,
 
 ---
 
+## Table of Contents
+
+1. [The Problem With Traditional Malware Analysis](#the-problem-with-traditional-malware-analysis)
+2. [What AIDebug Does](#what-aidebug-does)
+3. [Architecture Deep Dive](#architecture-deep-dive)
+   - [Layer 1: Static Analysis](#layer-1-static-analysis)
+   - [Layer 2: Disassembler](#layer-2-disassembler)
+   - [Layer 3: AI Analysis](#layer-3-ai-analysis)
+   - [Layer 4: Dynamic Instrumentation (Frida)](#layer-4-dynamic-instrumentation-frida)
+   - [Layer 5: Persistence (SQLite)](#layer-5-persistence-sqlite)
+4. [Running It On a Real Sample](#running-it-on-a-real-sample)
+5. [Installation](#installation)
+6. [Ask the AI Follow-Up Questions](#ask-the-ai-follow-up-questions)
+7. [Architecture Summary](#architecture-summary)
+8. [What's Next](#whats-next)
+9. [Why Claude?](#why-claude)
+10. [Conclusion](#conclusion)
+
+---
+
 ## The Problem With Traditional Malware Analysis
 
 When you open a stripped Windows PE in a disassembler, you're greeted with hundreds of functions named `sub_401234`. Your job is to:
