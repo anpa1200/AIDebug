@@ -27,6 +27,10 @@ class Function:
     called_from: list = field(default_factory=list)
     strings_referenced: list = field(default_factory=list)
     size: int = 0
+    # Populated after discovery by PatternDetector and FlirtMatcher
+    patterns: list = field(default_factory=list)    # [MalwarePattern]
+    flirt_match: object = field(default=None)        # FlirtMatch or None
+    is_library: bool = False
 
     @property
     def disassembly_text(self) -> str:
@@ -132,7 +136,40 @@ class Disassembler:
             if a in self.functions:
                 self.functions[a].name = exp['name']
 
+        # Run pattern detection + FLIRT on all discovered functions
+        self._run_enrichment(found)
+
         return sorted(found)
+
+    def _run_enrichment(self, addresses: list):
+        """Run PatternDetector and FlirtMatcher on all functions."""
+        try:
+            from .pattern_detector import PatternDetector
+            from .flirt import FlirtMatcher
+            detector = PatternDetector()
+            flirt    = FlirtMatcher(self.info)
+        except Exception:
+            return
+
+        for addr in addresses:
+            func = self.functions.get(addr)
+            if not func:
+                continue
+            # Pattern detection
+            try:
+                func.patterns = detector.detect(func)
+            except Exception:
+                func.patterns = []
+            # FLIRT matching
+            try:
+                match = flirt.identify(func)
+                if match:
+                    func.flirt_match = match
+                    func.is_library  = match.skip_ai
+                    if match.function_name not in ('trivial_stub',) and not func.is_named:
+                        func.name = match.function_name
+            except Exception:
+                pass
 
     def get_function(self, address: int) -> Optional[Function]:
         if address not in self.functions:

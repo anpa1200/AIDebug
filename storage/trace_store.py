@@ -49,9 +49,38 @@ CREATE TABLE IF NOT EXISTS api_calls (
     FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
+CREATE TABLE IF NOT EXISTS network_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  INTEGER NOT NULL,
+    event_type  TEXT,
+    function    TEXT,
+    ip          TEXT,
+    port        INTEGER,
+    data_hex    TEXT,
+    size        INTEGER,
+    url         TEXT,
+    headers     TEXT,
+    timestamp   INTEGER,
+    logged_at   TEXT    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS detected_patterns (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  INTEGER NOT NULL,
+    address     INTEGER NOT NULL,
+    name        TEXT,
+    description TEXT,
+    severity    TEXT,
+    evidence    TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_traces_session  ON function_traces(session_id);
 CREATE INDEX IF NOT EXISTS idx_traces_risk     ON function_traces(risk_level);
 CREATE INDEX IF NOT EXISTS idx_api_session     ON api_calls(session_id);
+CREATE INDEX IF NOT EXISTS idx_net_session     ON network_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_pat_session     ON detected_patterns(session_id);
 """
 
 
@@ -202,6 +231,69 @@ class TraceStore:
             "SELECT * FROM api_calls WHERE session_id=? ORDER BY id",
             (session_id,),
         ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Network events (dynamic mode)
+    # ------------------------------------------------------------------
+
+    def save_network_event(self, session_id: int, event: dict):
+        self.conn.execute(
+            "INSERT INTO network_events "
+            "(session_id, event_type, function, ip, port, data_hex, size, url, headers, timestamp) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                session_id,
+                event.get('event', ''),
+                event.get('function', ''),
+                event.get('ip', ''),
+                event.get('port', 0),
+                event.get('data_hex', ''),
+                event.get('size', 0),
+                event.get('url', ''),
+                event.get('headers', ''),
+                event.get('timestamp', 0),
+            ),
+        )
+        self.conn.commit()
+
+    def get_network_events(self, session_id: int) -> list:
+        rows = self.conn.execute(
+            "SELECT * FROM network_events WHERE session_id=? ORDER BY id",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Detected patterns
+    # ------------------------------------------------------------------
+
+    def save_patterns(self, session_id: int, address: int, patterns: list):
+        """Save detected MalwarePattern objects for a function."""
+        self.conn.execute(
+            "DELETE FROM detected_patterns WHERE session_id=? AND address=?",
+            (session_id, address),
+        )
+        for p in patterns:
+            self.conn.execute(
+                "INSERT INTO detected_patterns "
+                "(session_id, address, name, description, severity, evidence) "
+                "VALUES (?,?,?,?,?,?)",
+                (session_id, address, p.name, p.description, p.severity, p.evidence),
+            )
+        self.conn.commit()
+
+    def get_patterns(self, session_id: int, address: int = None) -> list:
+        if address is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM detected_patterns WHERE session_id=? AND address=? ORDER BY id",
+                (session_id, address),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM detected_patterns WHERE session_id=? ORDER BY address, id",
+                (session_id,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------

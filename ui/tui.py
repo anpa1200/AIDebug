@@ -22,9 +22,12 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import (
     DataTable, Footer, Header, Input, Label,
-    RichLog, Static, LoadingIndicator,
+    RichLog, Static, LoadingIndicator, TabbedContent, TabPane,
 )
 from textual import work
+
+from analysis.cfg import CFGBuilder, CFGTextRenderer
+from analysis.pattern_detector import PatternDetector
 
 import config
 
@@ -236,11 +239,18 @@ Screen {
                 yield Label(" REGISTERS / SNAPSHOT ", id="reg-title")
                 yield RichLog(id="reg-view", highlight=True, markup=True)
 
-            # RIGHT — AI analysis
+            # RIGHT — tabbed panel
             with Vertical(id="right-panel"):
-                yield Label(" AI ANALYSIS ", id="right-title")
                 yield LoadingIndicator(id="ai-loading")
-                yield RichLog(id="ai-log", highlight=True, markup=True)
+                with TabbedContent(id="right-tabs"):
+                    with TabPane("AI Analysis", id="tab-ai"):
+                        yield RichLog(id="ai-log", highlight=True, markup=True)
+                    with TabPane("CFG", id="tab-cfg"):
+                        yield RichLog(id="cfg-log", highlight=True, markup=True)
+                    with TabPane("Patterns", id="tab-patterns"):
+                        yield RichLog(id="patterns-log", highlight=True, markup=True)
+                    with TabPane("Network", id="tab-network"):
+                        yield RichLog(id="network-log", highlight=True, markup=True)
 
         # Bottom — chat bar
         with Horizontal(id="chat-bar"):
@@ -304,6 +314,8 @@ Screen {
 
         self._render_disassembly(func)
         self._render_registers(None)
+        self._render_cfg(func)
+        self._render_patterns(func)
 
         # Show cached analysis if available
         if address in self._analyses:
@@ -368,6 +380,62 @@ Screen {
             log.write(f"[cyan]{reg.upper():<5}[/cyan]  {val_str}")
         if snapshot.entry_stack_hex:
             log.write(f"\n[dim]Stack: {snapshot.entry_stack_hex}[/dim]")
+
+    # ------------------------------------------------------------------
+    # CFG panel
+    # ------------------------------------------------------------------
+
+    def _render_cfg(self, func):
+        log: RichLog = self.query_one("#cfg-log")
+        log.clear()
+        try:
+            cfg = CFGBuilder().build(func)
+            text = CFGTextRenderer().render(cfg)
+            log.write(text)
+        except Exception as exc:
+            log.write(f"[dim]CFG unavailable: {exc}[/dim]")
+
+    # ------------------------------------------------------------------
+    # Patterns panel
+    # ------------------------------------------------------------------
+
+    def _render_patterns(self, func):
+        log: RichLog = self.query_one("#patterns-log")
+        log.clear()
+        patterns = getattr(func, 'patterns', [])
+        if not patterns:
+            log.write("[dim]No malware patterns detected in this function.[/dim]")
+            return
+        for p in patterns:
+            log.write(
+                f"[bold {p.severity_color}]{p.severity_badge}[/bold {p.severity_color}] "
+                f"[bold]{p.name}[/bold]  [dim]@ 0x{p.address:08x}[/dim]"
+            )
+            log.write(f"  {p.description}")
+            if p.evidence:
+                log.write(f"  [dim]Evidence: {p.evidence}[/dim]")
+            log.write("")
+
+    # ------------------------------------------------------------------
+    # Network panel (called from dynamic mode callbacks)
+    # ------------------------------------------------------------------
+
+    def append_network_event(self, event: dict):
+        """Append a network event to the Network tab (thread-safe via call_from_thread)."""
+        def _do():
+            log: RichLog = self.query_one("#network-log")
+            evt   = event.get('event', '')
+            fn    = event.get('function', '')
+            ip    = event.get('ip', '')
+            port  = event.get('port', 0)
+            size  = event.get('size', 0)
+            url   = event.get('url', '')
+            dest  = url or (f"{ip}:{port}" if ip else '?')
+            log.write(
+                f"[cyan]{evt}[/cyan] [yellow]{fn}[/yellow]  "
+                f"[white]{dest}[/white]  [dim]{size} bytes[/dim]"
+            )
+        self.call_from_thread(_do)
 
     # ------------------------------------------------------------------
     # AI analysis panel

@@ -127,7 +127,23 @@ class AIAnalyzer:
         function: Function,
         binary_info: BinaryInfo,
         snapshot=None,
+        force: bool = False,
     ) -> AIAnalysis:
+        # Skip library functions unless forced
+        if function.is_library and not force:
+            match = function.flirt_match
+            lib   = match.library if match else 'compiler'
+            name  = match.function_name if match else function.name
+            return AIAnalysis(
+                suggested_name=name,
+                summary=f'[FLIRT] Identified as {name} from {lib}. Skipped AI analysis.',
+                parameters=[],
+                return_value='',
+                behaviors=[f'Library function: {lib}'],
+                mitre_technique=None,
+                risk_level='LOW',
+                notes='Identified by FLIRT signature — not a custom malware function.',
+            )
 
         prompt = self._build_prompt(function, binary_info, snapshot)
         self._history = [{"role": "user", "content": prompt}]
@@ -205,6 +221,12 @@ class AIAnalyzer:
                 f"  Return value    : {hex(snapshot.return_value)}\n"
             )
 
+        # Detected patterns block
+        patterns_text = ''
+        if getattr(function, 'patterns', None):
+            lines = [f'  [{p.severity}] {p.name}: {p.evidence}' for p in function.patterns]
+            patterns_text = '\nPRE-DETECTED PATTERNS:\n' + '\n'.join(lines) + '\n'
+
         return ANALYSIS_TEMPLATE.format(
             filename=info.filename,
             arch=info.arch,
@@ -219,7 +241,7 @@ class AIAnalyzer:
             strings=strings_text,
             called_from=called_from,
             calls_to=calls_to,
-            runtime_block=runtime_block,
+            runtime_block=runtime_block + patterns_text,
         )
 
     def _parse(self, raw: str) -> AIAnalysis:

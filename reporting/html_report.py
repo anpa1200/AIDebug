@@ -6,6 +6,13 @@ import json
 import os
 from datetime import datetime
 
+try:
+    from analysis.cfg import CFGBuilder, CFGSVGRenderer
+    from analysis.disassembler import Function, Instruction
+    _CFG_AVAILABLE = True
+except ImportError:
+    _CFG_AVAILABLE = False
+
 
 RISK_COLOR = {
     'CRITICAL': '#e74c3c',
@@ -157,6 +164,32 @@ a:hover { text-decoration: underline; }
 .badge-LOW      { background: #0e3d1a; color: #56d364; border: 1px solid #1a6e30; }
 .badge-NONE     { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
 
+/* ---- CFG SVG ---- */
+.cfg-container {
+    background: #0d1117; border: 1px solid #21262d;
+    border-radius: 6px; overflow-x: auto; margin-top: 6px;
+    padding: 12px; text-align: center;
+}
+.cfg-container svg { max-width: 100%; height: auto; }
+
+/* ---- Pattern list ---- */
+.pattern-item {
+    padding: 8px 12px; border-left: 3px solid #30363d;
+    margin-bottom: 8px; background: #161b22; border-radius: 0 4px 4px 0;
+}
+.pattern-item.sev-HIGH    { border-color: #ffa657; }
+.pattern-item.sev-MEDIUM  { border-color: #e3b341; }
+.pattern-item.sev-INFO    { border-color: #79c0ff; }
+.pattern-badge {
+    font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 3px; margin-right: 8px;
+}
+.pat-HIGH   { background: #3d1f0e; color: #ffa657; }
+.pat-MEDIUM { background: #3d3200; color: #e3b341; }
+.pat-INFO   { background: #0d1e3d; color: #79c0ff; }
+.pattern-name { font-weight: 600; color: #f0f6fc; }
+.pattern-evidence { font-size: 12px; color: #8b949e; margin-top: 3px; font-family: monospace; }
+
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #0d1117; }
@@ -182,12 +215,15 @@ window.addEventListener('DOMContentLoaded', function() {
 
 class HTMLReporter:
 
-    def generate(self, session: dict, traces: list, output_path: str):
+    def generate(self, session: dict, traces: list, output_path: str,
+                 disassembler=None, store=None):
         """
         Generate a self-contained HTML report.
-        session: dict from TraceStore.get_session()
-        traces:  list from TraceStore.get_all_traces()
-        output_path: where to write the .html file
+        session:      dict from TraceStore.get_session()
+        traces:       list from TraceStore.get_all_traces()
+        output_path:  where to write the .html file
+        disassembler: optional Disassembler (enables inline CFG SVGs)
+        store:        optional TraceStore (enables pattern sections)
         """
         risk_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
         for t in traces:
@@ -195,14 +231,14 @@ class HTMLReporter:
             if lvl in risk_counts:
                 risk_counts[lvl] += 1
 
-        html = self._build(session, traces, risk_counts)
+        html = self._build(session, traces, risk_counts, disassembler, store)
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(html)
         return output_path
 
     # ------------------------------------------------------------------
 
-    def _build(self, session, traces, risk_counts) -> str:
+    def _build(self, session, traces, risk_counts, disassembler=None, store=None) -> str:
         filename   = _esc(session.get('filename', 'unknown'))
         sha256     = _esc(session.get('sha256', ''))
         arch       = _esc(f"{session.get('arch', '?')} {session.get('bits', '?')}-bit")
@@ -281,6 +317,10 @@ class HTMLReporter:
             ret_html   = f'<div class="notes-box">{ret_val}</div>' if ret_val else ''
 
             disasm_html = self._render_disasm(disasm)
+            cfg_html     = self._render_cfg_svg(addr, disassembler)
+            patterns_html = self._render_patterns_html(
+                store.get_patterns(session['id'], addr) if store else []
+            )
 
             details += f"""
             <div class="func-detail" id="detail-{idx}">
@@ -305,6 +345,11 @@ class HTMLReporter:
 
                 <div class="section-title">Analyst Notes</div>
                 {notes_html}
+
+                {patterns_html}
+
+                <div class="section-title">Control Flow Graph</div>
+                {cfg_html}
 
                 <div class="section-title">Disassembly</div>
                 {disasm_html}
@@ -336,6 +381,34 @@ class HTMLReporter:
 <script>{JS}</script>
 </body>
 </html>"""
+
+    def _render_cfg_svg(self, address: int, disassembler) -> str:
+        if not disassembler or not _CFG_AVAILABLE:
+            return '<div class="cfg-container"><span style="color:#8b949e">CFG not available (static mode)</span></div>'
+        try:
+            func = disassembler.get_function(address)
+            if not func or not func.instructions:
+                return '<div class="cfg-container"><span style="color:#8b949e">No instructions found</span></div>'
+            cfg = CFGBuilder().build(func)
+            svg = CFGSVGRenderer().render(cfg)
+            return f'<div class="cfg-container">{svg}</div>'
+        except Exception as exc:
+            return f'<div class="cfg-container"><span style="color:#8b949e">CFG error: {_esc(str(exc))}</span></div>'
+
+    def _render_patterns_html(self, patterns: list) -> str:
+        if not patterns:
+            return ''
+        items = ''
+        for p in patterns:
+            sev = (p.get('severity') or 'INFO').upper()
+            badge_cls = f'pat-{sev}' if sev in ('HIGH', 'MEDIUM', 'INFO') else 'pat-INFO'
+            items += f"""
+            <div class="pattern-item sev-{sev}">
+                <span class="pattern-badge {badge_cls}">{sev}</span>
+                <span class="pattern-name">{_esc(p.get('name',''))}</span>
+                <div class="pattern-evidence">{_esc(p.get('evidence',''))}</div>
+            </div>"""
+        return f'<div class="section-title">Detected Patterns</div>{items}'
 
     def _render_disasm(self, disasm_text: str) -> str:
         if not disasm_text:
