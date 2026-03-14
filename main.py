@@ -2,10 +2,14 @@
 """
 AIDebug — AI-Assisted Malware Debugger
 Usage:
-    python main.py --binary <path>             # static analysis + TUI
-    python main.py --binary <path> --no-tui    # CLI mode (print to stdout)
-    python main.py --binary <path> --pid 1234  # dynamic mode (attach Frida)
-    python main.py --list-sessions             # show past analysis sessions
+    python main.py --binary <path>                    # static analysis + TUI
+    python main.py --binary <path> --no-tui           # CLI mode (print to stdout)
+    python main.py --binary <path> --pid 1234         # dynamic mode (attach Frida)
+    python main.py --list-sessions                    # show past analysis sessions
+    python main.py --session 1 --report               # HTML report for session 1
+    python main.py --session 1 --yara                 # YARA rules for session 1
+    python main.py --session 1 --json-export          # JSON export for session 1
+    python main.py --session 1 --report --yara --json-export  # all three at once
 """
 import argparse
 import os
@@ -215,6 +219,46 @@ def list_sessions(store):
 
 
 # ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+def run_reports(store, session_id: int, out_dir: str,
+                do_html=False, do_yara=False, do_json=False):
+    import os
+    from reporting import HTMLReporter, YaraGenerator, JSONExporter
+
+    session = store.get_session(session_id)
+    if not session:
+        print(f"[!] Session {session_id} not found.")
+        return
+
+    traces    = store.get_all_traces(session_id)
+    api_calls = store.get_api_calls(session_id)
+
+    stem = session.get('filename', f'session_{session_id}').replace('.', '_')
+    os.makedirs(out_dir, exist_ok=True)
+
+    print(f"[*] Session {session_id}: {session.get('filename')}  "
+          f"({len(traces)} functions analyzed)")
+
+    if do_html:
+        path = os.path.join(out_dir, f"{stem}_report.html")
+        HTMLReporter().generate(session, traces, path)
+        print(f"[+] HTML report   → {path}")
+
+    if do_yara:
+        check_api_key()
+        path = os.path.join(out_dir, f"{stem}.yar")
+        _, count = YaraGenerator().generate(session, traces, path)
+        print(f"[+] YARA rules    → {path}  ({count} rules)")
+
+    if do_json:
+        path = os.path.join(out_dir, f"{stem}_export.json")
+        JSONExporter().export(session, traces, api_calls, path)
+        print(f"[+] JSON export   → {path}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -230,6 +274,11 @@ def main():
     parser.add_argument("--pid",            type=int, help="PID to attach (dynamic mode)")
     parser.add_argument("--no-tui",         action="store_true", help="CLI output, no TUI")
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
+    parser.add_argument("--session",        type=int, help="Session ID for reporting commands")
+    parser.add_argument("--report",         action="store_true", help="Generate HTML report")
+    parser.add_argument("--yara",           action="store_true", help="Generate YARA rules (HIGH/CRITICAL)")
+    parser.add_argument("--json-export",    action="store_true", help="Export session as JSON for SIEM/SOAR")
+    parser.add_argument("--out-dir",        default=".", help="Output directory for reports (default: current dir)")
     parser.add_argument("--db",             default=config.DB_PATH,
                         help=f"SQLite DB path (default: {config.DB_PATH})")
     args = parser.parse_args()
@@ -239,6 +288,20 @@ def main():
 
     if args.list_sessions:
         list_sessions(store)
+        return
+
+    # ---- Reporting commands (work on an existing session, no binary needed) ----
+    if args.report or args.yara or args.json_export:
+        if not args.session:
+            # Auto-pick the most recent session
+            sessions = store.list_sessions()
+            if not sessions:
+                print("[!] No sessions found. Run an analysis first.")
+                sys.exit(1)
+            args.session = sessions[0]['id']
+            print(f"[*] Auto-selected most recent session: {args.session}")
+        run_reports(store, args.session, args.out_dir,
+                    do_html=args.report, do_yara=args.yara, do_json=args.json_export)
         return
 
     if not args.binary:
