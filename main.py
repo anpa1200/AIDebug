@@ -132,11 +132,17 @@ def run_dynamic(binary_info, disassembler, addresses, store, session_id, pid=Non
     print(f"[*] Dynamic mode — attaching Frida…")
     if pid:
         ok = engine.attach(pid)
-        print(f"[*] Attached to PID {pid}: {ok}")
+        if not ok:
+            print(f"[!] Failed to attach to PID {pid}. Is the process running? "
+                  f"Try: echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope")
+            sys.exit(1)
+        print(f"[*] Attached to PID {pid}")
     else:
         spawned_pid = engine.spawn(binary_path)
         if not spawned_pid:
-            print("[!] Failed to spawn process.")
+            print("[!] Failed to spawn process. On Linux, Windows PE files must be run "
+                  "under Wine. Try:\n"
+                  "    wine <binary>  — then attach with --pid <wine_pid>")
             sys.exit(1)
         print(f"[*] Spawned PID: {spawned_pid}")
         pid = spawned_pid
