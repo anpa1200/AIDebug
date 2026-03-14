@@ -290,10 +290,9 @@ def main():
         list_sessions(store)
         return
 
-    # ---- Reporting commands (work on an existing session, no binary needed) ----
-    if args.report or args.yara or args.json_export:
+    # ---- Reporting only (no binary) — work on an existing session ----
+    if (args.report or args.yara or args.json_export) and not args.binary:
         if not args.session:
-            # Auto-pick the most recent session
             sessions = store.list_sessions()
             if not sessions:
                 print("[!] No sessions found. Run an analysis first.")
@@ -318,13 +317,22 @@ def main():
     session_id = store.create_session(binary_info)
     print(f"[*] Session ID: {session_id}")
 
+    wants_report = args.report or args.yara or args.json_export
+
     if args.mode == "dynamic":
         run_dynamic(binary_info, disassembler, addresses, store, session_id,
                     pid=args.pid, binary_path=args.binary)
-    elif args.no_tui:
+    elif args.no_tui or wants_report:
+        # With reporting flags, always run CLI analysis first so there is data
         run_cli(binary_info, disassembler, addresses, store, session_id)
     else:
         run_tui(binary_info, disassembler, addresses, store, session_id)
+
+    # ---- Auto-generate reports after analysis completes ----
+    if wants_report:
+        print()
+        run_reports(store, session_id, args.out_dir,
+                    do_html=args.report, do_yara=args.yara, do_json=args.json_export)
 
 
 if __name__ == "__main__":
