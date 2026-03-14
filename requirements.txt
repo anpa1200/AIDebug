@@ -1,0 +1,7 @@
+frida
+capstone
+pefile
+pyelftools
+anthropic
+textual>=0.52.0
+rich>=13.0.0
