@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this project in research, reporting, or tooling, please cite it."
+title: "AIDebug"
+authors:
+  - family-names: "Pautov"
+    given-names: "Andrey"
+    orcid: "[user: confirm or remove]"
+url: "https://github.com/anpa1200/AIDebug"
+repository-code: "https://github.com/anpa1200/AIDebug"
+license: "MIT"
