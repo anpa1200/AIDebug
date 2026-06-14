@@ -1,0 +1,41 @@
+Source: aidebug
+Section: utils
+Priority: optional
+Maintainer: Andrey Pautov <1200km@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-capstone,
+ python3-pefile,
+ python3-pyelftools,
+ python3-pytest,
+ python3-rich,
+ python3-setuptools,
+ python3-textual
+Standards-Version: 4.7.0
+Homepage: https://github.com/anpa1200/AIDebug
+Vcs-Browser: https://github.com/anpa1200/AIDebug
+Vcs-Git: https://github.com/anpa1200/AIDebug.git
+Rules-Requires-Root: no
+
+Package: aidebug
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-capstone,
+ python3-pefile,
+ python3-pyelftools,
+ python3-rich,
+ python3-textual
+Description: AI-assisted malware reverse-engineering debugger
+ AIDebug performs malware triage and reverse-engineering support for PE and
+ ELF binaries. It extracts function-level behavior, maps suspicious logic to
+ MITRE ATT&CK, and emits detection-oriented outputs such as YARA candidates,
+ IOC lists, JSON exports, and HTML analyst reports.
+ .
+ Static analysis can run without executing samples. Optional Anthropic-backed
+ analysis and Frida-based dynamic tracing depend on Python modules that may
+ need separate Kali/Debian packaging.

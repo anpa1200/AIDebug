@@ -1,0 +1,41 @@
+.TH AIDEBUG 1 "June 2026" "aidebug 1.0.0" "User Commands"
+.SH NAME
+aidebug \- AI-assisted malware reverse-engineering debugger
+.SH SYNOPSIS
+.B aidebug
+.RI [ options ]
+.SH DESCRIPTION
+AIDebug performs static and optional dynamic malware-analysis triage. It maps
+function-level behavior to MITRE ATT&CK, YARA candidates, IOC exports, JSON
+output, and HTML analyst reports.
+.SH OPTIONS
+.TP
+.BR \-\-binary " " FILE
+Analyze a PE or ELF binary.
+.TP
+.BR \-\-mode " " MODE
+Analysis mode: static or dynamic.
+.TP
+.B \-\-no-tui
+Use CLI output instead of the terminal interface.
+.TP
+.B \-\-report
+Generate an HTML report.
+.TP
+.B \-\-yara
+Generate YARA candidate rules for high-risk findings.
+.TP
+.B \-\-json-export
+Export analysis data as JSON.
+.TP
+.BR \-\-out-dir " " DIR
+Write report output to DIR.
+.SH EXAMPLE
+.B aidebug --binary sample.exe --no-tui --report --json-export --out-dir reports/
+.SH SAFETY
+Use only in an isolated malware-analysis VM or authorized lab. Do not execute
+unknown samples on a host operating system.
+.SH AUTHOR
+Andrey Pautov <1200km@gmail.com>
+.SH LICENSE
+MIT
