@@ -138,6 +138,11 @@ https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-ev
   usage patterns.
 - Do not upload live malware samples to issues or discussions.
 
+## Discovery And Launch Material
+
+Use [`DISCOVERY.md`](DISCOVERY.md) for canonical links, platform-specific launch
+copy, newsletter pitch text, and current external submission tracking.
+
 ## Citation
 
 See `CITATION.cff`.
