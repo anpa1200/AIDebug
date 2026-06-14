@@ -5,6 +5,10 @@
 [![CI](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml)
 [![Publish](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![External submissions](https://img.shields.io/badge/External%20submissions-submitted-yellow)](DISCOVERY.md)
+[![Accepted upstream](https://img.shields.io/badge/Accepted%20upstream-pending-lightgrey)](DISCOVERY.md)
+[![REMnux proposal](https://img.shields.io/badge/REMnux-submitted-yellow)](https://github.com/REMnux/salt-states/issues/345)
+[![BlackArch proposal](https://img.shields.io/badge/BlackArch-submitted-yellow)](https://github.com/BlackArch/blackarch/issues/4965)
 
 AI-assisted malware reverse-engineering debugger that turns function behavior into ATT&CK mappings, YARA rules, IOC exports, and analyst reports.
 
