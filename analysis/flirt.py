@@ -221,7 +221,7 @@ class FlirtMatcher:
             return None
 
     def _load_db(self) -> dict:
-        db_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'flirt_sigs.json')
+        db_path = os.path.join(os.path.dirname(__file__), 'data', 'flirt_sigs.json')
         try:
             with open(db_path, 'r') as f:
                 return json.load(f)

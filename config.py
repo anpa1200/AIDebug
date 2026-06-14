@@ -6,7 +6,7 @@ AI_MODEL = "claude-opus-4-6"
 AI_MAX_TOKENS = 2048
 
 # --- Sample paths ---
-SAMPLES_DIR = "/home/andrey/git_project/String-Analyzer/malware_samples"
+SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
 
 # --- Database ---
 DB_PATH = os.path.join(os.path.dirname(__file__), "traces.db")

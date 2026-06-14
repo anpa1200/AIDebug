@@ -3,6 +3,10 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+.venv/
+build/
+dist/
+*.egg-info/
 .env
 traces.db
 *.db-shm

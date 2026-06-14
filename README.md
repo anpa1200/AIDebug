@@ -1,10 +1,12 @@
 # AIDebug
 
-AI-assisted malware reverse-engineering debugger that turns function behavior into ATT&CK mappings, YARA rules, IOC exports, and analyst reports.
+[![PyPI](https://img.shields.io/pypi/v/1200km-aidebug.svg)](https://pypi.org/project/1200km-aidebug/)
+[![Python](https://img.shields.io/pypi/pyversions/1200km-aidebug.svg)](https://pypi.org/project/1200km-aidebug/)
+[![CI](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml)
+[![Publish](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-![License](https://img.shields.io/github/license/anpa1200/AIDebug)
-![Last commit](https://img.shields.io/github/last-commit/anpa1200/AIDebug)
-![Python](https://img.shields.io/github/languages/top/anpa1200/AIDebug)
+AI-assisted malware reverse-engineering debugger that turns function behavior into ATT&CK mappings, YARA rules, IOC exports, and analyst reports.
 
 ## Demo
 
@@ -27,13 +29,37 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 
 ## Quick Start
 
+### PyPI install
+
+```bash
+pip install 1200km-aidebug
+aidebug --help
+```
+
+The PyPI distribution is named `1200km-aidebug`; the installed command is
+`aidebug`.
+
+Dynamic Frida instrumentation is optional:
+
+```bash
+pip install "1200km-aidebug[dynamic]"
+```
+
+### From source
+
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-python aidebug.py samples/example.exe --output reports/
+pip install -e ".[dynamic]"
+aidebug --binary samples/example.exe --no-tui --report --json-export --out-dir reports/
+```
+
+Set `ANTHROPIC_API_KEY` before AI-backed function analysis or YARA generation:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ## How It Works
@@ -62,6 +88,13 @@ AIDebug extracts function-level behavior, maps suspicious logic to ATT&CK techni
 | Dynamic mode | Frida, remote frida-server, INetSim sandbox support |
 | Reports | HTML, JSON, YARA |
 
+## Safety
+
+Use AIDebug only in an isolated malware-analysis VM or lab. Do not run unknown
+samples on your host OS. Static analysis can inspect PE/ELF files directly;
+dynamic mode attaches Frida to a running process or sandbox and should be used
+only with authorization and isolation.
+
 ## Limitations And Honesty
 
 AIDebug accelerates triage. It does not replace manual reverse engineering, sandbox validation, or analyst judgment. ATT&CK mappings and YARA output must be reviewed before operational use.
@@ -76,7 +109,7 @@ See `CITATION.cff`.
 
 ## License
 
-MIT recommended.
+[MIT](LICENSE).
 
 ## Security Policy
 

@@ -1,0 +1,6 @@
+include LICENSE
+include README.md
+include SECURITY.md
+include CITATION.cff
+recursive-include data *.json
+recursive-include debugger/scripts *.js

@@ -1,4 +1,3 @@
-frida
 capstone
 pefile
 pyelftools

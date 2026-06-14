@@ -151,7 +151,7 @@ class YaraGenerator:
                 raw = re.sub(r'^```[a-z]*\n?', '', raw)
                 raw = re.sub(r'\n?```$', '', raw)
             return raw.strip()
-        except Exception as e:
+        except Exception:
             # Fall back to a minimal template rule so the file stays valid
             return self._fallback_rule(rule_name, name, address, risk, mitre, summary, strings_ref)
 
@@ -164,6 +164,8 @@ class YaraGenerator:
         if strings_ref:
             str_cond = ' or '.join(f'$s{i}' for i in range(min(5, len(strings_ref))))
 
+        string_section = str_defs or '        // no string references found\n'
+
         return f"""\
 // Detection for {name} ({risk}) — fallback template (AI call failed)
 // {summary[:100]}
@@ -175,7 +177,7 @@ rule {rule_name} {{
         risk_level  = "{risk}"
         function_va = "{hex(address)}"
     strings:
-{str_defs or '        // no string references found\n'}
+{string_section}
     condition:
         {str_cond}
 }}"""

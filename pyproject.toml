@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "1200km-aidebug"
+version = "1.0.0"
+description = "AI-assisted malware reverse-engineering debugger with ATT&CK, YARA, IOC, and report output."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Andrey Pautov", email = "1200km@gmail.com" }]
+keywords = [
+  "malware-analysis",
+  "reverse-engineering",
+  "debugger",
+  "frida",
+  "capstone",
+  "yara",
+  "mitre-attack",
+  "cti",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+]
+dependencies = [
+  "anthropic>=0.40",
+  "capstone>=5",
+  "pefile>=2023.2.7",
+  "pyelftools>=0.31",
+  "rich>=13.0.0",
+  "textual>=0.52.0",
+]
+
+[project.optional-dependencies]
+dynamic = ["frida>=16"]
+dev = ["build>=1.2", "pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+aidebug = "main:main"
+
+[project.urls]
+Homepage = "https://github.com/anpa1200/AIDebug"
+Repository = "https://github.com/anpa1200/AIDebug"
+Documentation = "https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a"
+Issues = "https://github.com/anpa1200/AIDebug/issues"
+
+[tool.setuptools]
+py-modules = ["main", "config"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["analysis*", "debugger*", "reporting*", "storage*", "ui*"]
+
+[tool.setuptools.package-data]
+analysis = ["data/*.json"]
+debugger = ["scripts/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
