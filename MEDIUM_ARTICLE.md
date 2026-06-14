@@ -353,39 +353,58 @@ Within minutes — without writing a single IDA script — we have a threat prof
 
 ## Installation
 
+The project is now published on PyPI, so the fastest install path is:
+
+```bash
+pip install 1200km-aidebug
+aidebug --help
+```
+
+PyPI package: **https://pypi.org/project/1200km-aidebug/**
+
+Current release: **https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0**
+
+Optional Frida dynamic instrumentation:
+
+```bash
+pip install "1200km-aidebug[dynamic]"
+```
+
+If you prefer running from source:
+
 ```bash
 git clone https://github.com/anpa1200/AIDebug
 cd AIDebug
-pip install -r requirements.txt
+pip install -e ".[dynamic]"
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### Run in TUI mode
 
 ```bash
-python main.py --binary /path/to/sample.exe
+aidebug --binary /path/to/sample.exe
 ```
 
 ### Run in CLI mode (headless, good for scripting)
 
 ```bash
-python main.py --binary sample.exe --no-tui
+aidebug --binary sample.exe --no-tui
 ```
 
 ### Generate HTML report in one shot
 
 ```bash
-python main.py --binary sample.exe --no-tui --report
+aidebug --binary sample.exe --no-tui --report
 ```
 
 ### Dynamic mode (requires Frida)
 
 ```bash
 # Linux with Wine
-python main.py --binary sample.exe --mode dynamic
+aidebug --binary sample.exe --mode dynamic
 
 # Attach to running process
-python main.py --binary sample.exe --mode dynamic --pid 4521
+aidebug --binary sample.exe --mode dynamic --pid 4521
 ```
 
 ---
@@ -484,16 +503,16 @@ After analysis, generate reports directly:
 
 ```bash
 # HTML report (self-contained, dark theme, CFG SVGs embedded)
-python main.py --binary sample.exe --no-tui --report
+aidebug --binary sample.exe --no-tui --report
 
 # YARA rules for HIGH/CRITICAL functions
-python main.py --binary sample.exe --no-tui --yara
+aidebug --binary sample.exe --no-tui --yara
 
 # JSON export for SIEM/SOAR
-python main.py --binary sample.exe --no-tui --json-export
+aidebug --binary sample.exe --no-tui --json-export
 
 # All three, custom output directory
-python main.py --binary sample.exe --no-tui --report --yara --json-export --out-dir ./reports/
+aidebug --binary sample.exe --no-tui --report --yara --json-export --out-dir ./reports/
 ```
 
 The HTML report includes an interactive sidebar with all functions sorted by risk, and each function's detail page shows:
@@ -600,6 +619,14 @@ AIDebug is not a replacement for IDA Pro or a seasoned reverse engineer. It's a 
 The combination gets you from "unknown packed PE" to a prioritized threat profile in minutes rather than hours.
 
 The full source is at **https://github.com/anpa1200/AIDebug**.
+
+Install from PyPI:
+
+```bash
+pip install 1200km-aidebug
+```
+
+Release page: **https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0**
 
 If you're working in threat intelligence, incident response, or malware research — try it on your next sample and let me know what you find.
 
