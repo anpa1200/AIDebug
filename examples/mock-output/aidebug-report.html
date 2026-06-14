@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AIDebug Mock Report</title>
+  <style>
+    body { background: #0b1220; color: #dbeafe; font-family: system-ui, sans-serif; margin: 2rem; }
+    code, pre { background: #111827; color: #bfdbfe; padding: .2rem .4rem; border-radius: .35rem; }
+    .card { border: 1px solid #334155; border-radius: .75rem; padding: 1rem; margin: 1rem 0; }
+    .high { color: #fca5a5; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>AIDebug Mock Report</h1>
+  <p>This report is safe sample output for README and parser demonstrations.</p>
+  <section class="card">
+    <h2>xor_decode_config <span class="high">HIGH</span></h2>
+    <p>Toy XOR loop decodes a local configuration-like string.</p>
+    <p>MITRE ATT&amp;CK: <code>T1140 - Deobfuscate/Decode Files or Information</code></p>
+    <pre>[HIGH] xor_decryption_loop @ 0x00001000
+Evidence: byte ^ key loop over local byte array</pre>
+  </section>
+</body>
+</html>

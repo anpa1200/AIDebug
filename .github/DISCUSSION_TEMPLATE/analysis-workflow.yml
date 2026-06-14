@@ -1,0 +1,28 @@
+title: "[Workflow] "
+labels: ["analysis-workflow"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for analysis workflow questions. Do not upload live malware.
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow goal
+      description: What are you trying to triage, explain, export, or detect?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: File type, safe hashes, target platform, and static/dynamic mode details.
+    validations:
+      required: false
+  - type: textarea
+    id: output
+    attributes:
+      label: Desired output
+      description: ATT&CK mapping, YARA, JSON, report, TUI behavior, or integration target.
+    validations:
+      required: false

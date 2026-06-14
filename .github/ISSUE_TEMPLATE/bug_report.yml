@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a reproducible AIDebug problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach live malware samples. Share hashes, redacted logs, or safe reproducer files only.
+  - type: input
+    id: version
+    attributes:
+      label: AIDebug version
+      description: Output of `aidebug --help` package version or PyPI/Git tag.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Analysis mode
+      options:
+        - static
+        - dynamic
+        - report/export
+        - packaging/install
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Install with ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "OS, Python version, package install method, terminal/VM details"
+    validations:
+      required: true

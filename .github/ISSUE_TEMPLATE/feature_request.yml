@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a new AIDebug capability or workflow.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Analyst problem
+      description: What malware-analysis workflow would this improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Desired output
+      description: Example CLI, JSON, YARA, report, or TUI behavior.
+    validations:
+      required: false
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and safety notes
+      description: Mention sandboxing, privacy, false-positive, or operational constraints.
+    validations:
+      required: false

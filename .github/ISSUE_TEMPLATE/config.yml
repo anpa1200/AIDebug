@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: mailto:1200km@gmail.com
+    about: Please report vulnerabilities privately instead of opening a public issue.
+  - name: Companion article
+    url: https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
+    about: Read the full walkthrough and architecture notes.

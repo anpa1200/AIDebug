@@ -8,9 +8,20 @@
 
 AI-assisted malware reverse-engineering debugger that turns function behavior into ATT&CK mappings, YARA rules, IOC exports, and analyst reports.
 
-## Demo
+## Screenshots
 
-Add an 8-15 second GIF showing: sample load -> function analysis -> ATT&CK mapping -> report export.
+Screenshots are taken from the companion walkthrough article:
+[AI-Powered Malware Debugger That Explains Every Function It Sees](https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a).
+
+![AIDebug TUI function analysis](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/tui-function-analysis.png)
+
+| Behavioral patterns | Control flow graph |
+|---|---|
+| ![AIDebug behavioral patterns tab](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/behavioral-patterns-tab.png) | ![AIDebug CFG visualization](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/control-flow-graph.png) |
+
+| Pattern detection output | Four-panel TUI |
+|---|---|
+| ![AIDebug pattern detection output](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/pattern-detection-output.png) | ![AIDebug four-panel TUI](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/four-panel-tui.png) |
 
 ## What This Is For
 
@@ -62,6 +73,23 @@ Set `ANTHROPIC_API_KEY` before AI-backed function analysis or YARA generation:
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+## Safe Examples
+
+The [`examples/`](examples/) directory contains safe, non-malicious demo
+material:
+
+- [`examples/toy_xor_config.py`](examples/toy_xor_config.py) - a benign toy XOR
+  loop for documentation.
+- [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
+  - representative JSON export.
+- [`examples/mock-output/aidebug-candidate.yar`](examples/mock-output/aidebug-candidate.yar)
+  - representative analyst-review YARA seed.
+- [`examples/mock-output/aidebug-report.html`](examples/mock-output/aidebug-report.html)
+  - compact mock HTML report.
+
+These examples are not live malware and are intended for README previews,
+parser tests, and integration demos.
+
 ## How It Works
 
 ```mermaid
@@ -101,7 +129,14 @@ AIDebug accelerates triage. It does not replace manual reverse engineering, sand
 
 ## Companion Article
 
-https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
+https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
+
+## Community
+
+- Use GitHub Issues for reproducible bugs and feature requests.
+- Use GitHub Discussions for workflow questions, integration ideas, and analyst
+  usage patterns.
+- Do not upload live malware samples to issues or discussions.
 
 ## Citation
 

@@ -1,0 +1,41 @@
+{
+  "session": {
+    "tool": "AIDebug",
+    "version": "1.0.0",
+    "source": "safe mock output",
+    "binary": "toy_xor_config.py",
+    "mode": "static",
+    "format": "python-source-demo"
+  },
+  "findings": [
+    {
+      "address": "0x00001000",
+      "suggested_name": "xor_decode_config",
+      "risk_level": "HIGH",
+      "summary": "Toy XOR loop decodes a local configuration-like string.",
+      "mitre_technique": "T1140 - Deobfuscate/Decode Files or Information",
+      "patterns": [
+        {
+          "name": "xor_decryption_loop",
+          "severity": "HIGH",
+          "evidence": "byte ^ key loop over local byte array"
+        }
+      ],
+      "analyst_note": "Mock example only. In real malware, inspect decoded output and callers."
+    },
+    {
+      "address": "0x00001080",
+      "suggested_name": "emit_decoded_value",
+      "risk_level": "INFO",
+      "summary": "Prints decoded toy value to stdout.",
+      "mitre_technique": null,
+      "patterns": []
+    }
+  ],
+  "iocs": {
+    "ipv4": [],
+    "domains": [],
+    "urls": [],
+    "files": []
+  }
+}
