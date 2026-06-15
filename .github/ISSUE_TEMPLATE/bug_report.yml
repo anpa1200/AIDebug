@@ -12,7 +12,7 @@ body:
     attributes:
       label: AIDebug version
       description: Output of `aidebug --help` package version or PyPI/Git tag.
-      placeholder: "1.0.0"
+      placeholder: "1.1.0"
     validations:
       required: true
   - type: dropdown

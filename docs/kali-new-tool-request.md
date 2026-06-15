@@ -14,16 +14,16 @@ aidebug - AI-assisted malware reverse-engineering debugger
 
 [Name] - AIDebug
 
-[Version] - 1.0.0
+[Version] - 1.1.0
 
 Use the tagged release, not a moving branch:
-<https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0>
+<https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0>
 
 [Homepage] - <https://github.com/anpa1200/AIDebug>
 
 [Download] -
 
-- Release: <https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0>
+- Release: <https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0>
 - PyPI: <https://pypi.org/project/1200km-aidebug/>
 
 [Author] - Andrey Pautov
@@ -59,7 +59,7 @@ detect-it-easy, yara, capa. AIDebug is not a replacement for those tools; it is
 a fast triage layer that produces detection-oriented outputs from function
 behavior.
 
-[Activity] - Active. Public release v1.0.0 was published on 2026-06-14. The
+[Activity] - Active. Public release v1.1.0 was prepared on 2026-06-15. The
 project includes PyPI packaging, GitHub release artifacts, CI, tests, safe demo
 examples, Debian/Kali packaging metadata, a man page, and autopkgtest metadata.
 
@@ -75,9 +75,9 @@ aidebug --help
 Or from the release source archive:
 
 ```bash
-wget https://github.com/anpa1200/AIDebug/archive/refs/tags/v1.0.0.tar.gz
-tar -xf v1.0.0.tar.gz
-cd AIDebug-1.0.0
+wget https://github.com/anpa1200/AIDebug/archive/refs/tags/v1.1.0.tar.gz
+tar -xf v1.1.0.tar.gz
+cd AIDebug-1.1.0
 python3 -m venv .venv
 . .venv/bin/activate
 pip install .
@@ -99,4 +99,3 @@ generation can run without AI.
 [Packaged] - Not currently packaged in Debian or Kali. Upstream includes
 Debian/Kali packaging metadata under `debian/`, a man page, and autopkgtest
 metadata to make Kali review easier.
-

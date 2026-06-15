@@ -28,7 +28,7 @@ aidebug --help
 ## Links
 
 - Repository: https://github.com/anpa1200/AIDebug
-- Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0
+- Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
 - PyPI: https://pypi.org/project/1200km-aidebug/
 - REMnux proposal: https://github.com/REMnux/salt-states/issues/345
 

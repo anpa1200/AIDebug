@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "1200km-aidebug"
-version = "1.0.0"
+version = "1.1.0"
 description = "AI-assisted malware reverse-engineering debugger with ATT&CK, YARA, IOC, and report output."
 readme = "README.md"
 license = "MIT"

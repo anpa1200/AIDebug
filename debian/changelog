@@ -1,3 +1,9 @@
+aidebug (1.1.0-0kali1) kali-dev; urgency=medium
+
+  * Release evidence-focused documentation and validation updates.
+
+ -- Andrey Pautov <1200km@gmail.com>  Mon, 15 Jun 2026 18:00:00 +0300
+
 aidebug (1.0.0-0kali1) kali-dev; urgency=medium
 
   * Initial release for Kali Linux.

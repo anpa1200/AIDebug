@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: AIDebug version
-      placeholder: "1.0.0"
+      placeholder: "1.1.0"
     validations:
       required: true
   - type: input

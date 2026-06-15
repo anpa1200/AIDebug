@@ -8,7 +8,7 @@ material, not final automated truth.
 
 - Repository: https://github.com/anpa1200/AIDebug
 - PyPI: https://pypi.org/project/1200km-aidebug/
-- Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0
+- Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
 - Article: https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
 - Portfolio hub: https://1200km.com/
 
@@ -122,7 +122,7 @@ structured outputs that malware analysts and detection engineers can review.
 
 GitHub: https://github.com/anpa1200/AIDebug
 PyPI: pip install 1200km-aidebug
-Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0
+Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
 ```
 
 ### X / Twitter Thread
@@ -168,7 +168,7 @@ detection-ready artifacts that still require human review.
 
 GitHub: https://github.com/anpa1200/AIDebug
 PyPI: https://pypi.org/project/1200km-aidebug/
-Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0
+Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
 
 Best,
 Andrey Pautov
@@ -196,4 +196,3 @@ Track progress as:
 - awesome-python-security: https://github.com/guardrailsio/awesome-python-security/pull/26
 - malware-analysis list: https://github.com/brandonhimpfen/awesome-malware-analysis/pull/6
 - Malware-Analysis list: https://github.com/kh4sh3i/Malware-Analysis/pull/2
-
