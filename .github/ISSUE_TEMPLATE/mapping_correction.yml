@@ -1,0 +1,37 @@
+name: ATT&CK mapping correction
+description: Report an inaccurate or unsupported technique mapping.
+title: "[Mapping]: "
+labels: ["mapping", "quality"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach live malware. Use hashes, redacted snippets, or safe reproducer data.
+  - type: input
+    id: version
+    attributes:
+      label: AIDebug version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: technique
+    attributes:
+      label: Current technique candidate
+      placeholder: "T1055"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence shown by AIDebug
+      description: Paste redacted function summary, pattern name, or safe disassembly excerpt.
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Suggested correction
+      description: Explain why the current mapping is weak and what should replace it.
+    validations:
+      required: true

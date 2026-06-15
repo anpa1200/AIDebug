@@ -53,6 +53,8 @@ Homepage = "https://github.com/anpa1200/AIDebug"
 Repository = "https://github.com/anpa1200/AIDebug"
 Documentation = "https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a"
 Issues = "https://github.com/anpa1200/AIDebug/issues"
+Changelog = "https://github.com/anpa1200/AIDebug/blob/main/CHANGELOG.md"
+Security = "https://github.com/anpa1200/AIDebug/blob/main/SECURITY.md"
 
 [tool.setuptools]
 py-modules = ["main", "config"]
