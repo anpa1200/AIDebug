@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+aidebug --help >/dev/null
+aidebug --version
+
+python3 - <<'PY'
+from importlib.resources import files
+
+from analysis.static_analyzer import StaticAnalyzer
+
+assert files("analysis").joinpath("data/flirt_sigs.json").is_file()
+info = StaticAnalyzer().analyze("/bin/true")
+assert info.file_format == "ELF"
+assert info.bits in (32, 64)
+PY
+
+aidebug --binary /bin/true --offline --no-tui --json-export \
+  --out-dir "$AUTOPKGTEST_TMP" --db "$AUTOPKGTEST_TMP/session.db"
+test -s "$AUTOPKGTEST_TMP/true_export.json"

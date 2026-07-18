@@ -1,8 +1,9 @@
 """
 FLIRT — Fast Library Identification and Recognition.
 
-Identifies known compiler-generated and library functions so the AI analyzer
-can skip them (saving API cost and reducing noise in reports).
+Produces bounded library-function hints. Only an exact import-wrapper match is
+authoritative enough to skip remote analysis; CRC, call-shape, and size matches
+remain review-only hints because they can collide.
 
 Approach:
   1. Import-wrapper detection   — thin function that just JMPs to an IAT entry
@@ -11,21 +12,23 @@ Approach:
   4. Size-based filtering       — very small functions (≤3 insns) with no calls
 """
 from __future__ import annotations
+
 import json
+import logging
 import os
-import struct
 from dataclasses import dataclass
-from typing import Optional
 
 from .disassembler import Function
 from .static_analyzer import BinaryInfo
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class FlirtMatch:
     function_name: str
     library: str
-    confidence: str   # 'exact' | 'inferred' | 'wrapper'
+    confidence: str   # 'exact' | 'inferred' | 'heuristic'
     skip_ai: bool     # True → skip sending to Claude
 
 
@@ -43,7 +46,7 @@ def _crc16(data: bytes) -> int:
     return crc
 
 
-def _function_fingerprint(function: Function) -> Optional[int]:
+def _function_fingerprint(function: Function) -> int | None:
     """CRC16 of first 32 instruction bytes, with immediate dword values zeroed."""
     raw = b''
     for insn in function.instructions[:10]:
@@ -79,13 +82,13 @@ class FlirtMatcher:
     # Public
     # ------------------------------------------------------------------
 
-    def identify(self, function: Function) -> Optional[FlirtMatch]:
+    def identify(self, function: Function) -> FlirtMatch | None:
         # 1. Import wrapper (JMP [IAT])
         m = self._check_import_wrapper(function)
         if m:
             return m
 
-        # 2. CRC16 signature match
+        # 2. CRC16 heuristic candidate (never authoritative)
         m = self._check_crc(function)
         if m:
             return m
@@ -109,7 +112,7 @@ class FlirtMatcher:
     # Strategies
     # ------------------------------------------------------------------
 
-    def _check_import_wrapper(self, function: Function) -> Optional[FlirtMatch]:
+    def _check_import_wrapper(self, function: Function) -> FlirtMatch | None:
         """Detects  JMP DWORD PTR [<iat entry>]  — the standard PE import thunk."""
         if len(function.instructions) > 3:
             return None
@@ -127,7 +130,7 @@ class FlirtMatcher:
                     )
         return None
 
-    def _check_crc(self, function: Function) -> Optional[FlirtMatch]:
+    def _check_crc(self, function: Function) -> FlirtMatch | None:
         if not function.instructions:
             return None
         fp = _function_fingerprint(function)
@@ -139,12 +142,15 @@ class FlirtMatcher:
             return FlirtMatch(
                 function_name=entry['name'],
                 library=entry.get('lib', 'msvcrt'),
-                confidence='exact',
-                skip_ai=entry.get('skip_ai', True),
+                # A 16-bit prologue checksum is collision-prone. It is useful
+                # as an analyst hint but cannot verify library identity and
+                # must never suppress review of potentially malicious code.
+                confidence='heuristic',
+                skip_ai=False,
             )
         return None
 
-    def _check_single_import_call(self, function: Function) -> Optional[FlirtMatch]:
+    def _check_single_import_call(self, function: Function) -> FlirtMatch | None:
         """
         If a small function's only call is to one known import,
         infer it's a wrapper for that import.
@@ -167,7 +173,7 @@ class FlirtMatcher:
             )
         return None
 
-    def _check_trivial(self, function: Function) -> Optional[FlirtMatch]:
+    def _check_trivial(self, function: Function) -> FlirtMatch | None:
         """Functions of ≤2 instructions with no real behavior."""
         insns = [i for i in function.instructions
                  if i.mnemonic.lower() not in ('nop', 'int3')]
@@ -178,7 +184,9 @@ class FlirtMatcher:
                     function_name='trivial_stub',
                     library='compiler',
                     confidence='inferred',
-                    skip_ai=True,
+                    # Tiny functions can still be security-relevant; keep the
+                    # hint, but do not suppress AI or analyst review.
+                    skip_ai=False,
                 )
         return None
 
@@ -192,7 +200,9 @@ class FlirtMatcher:
             return
         import pefile
         try:
-            pe = pefile.PE(self.binary_info.path, fast_load=False)
+            # Use the already-hashed sample bytes. Reopening the path here
+            # could inspect a different file after a path replacement.
+            pe = pefile.PE(data=self.binary_info.raw_data, fast_load=False)
             if hasattr(pe, 'DIRECTORY_ENTRY_IMPORT'):
                 for entry in pe.DIRECTORY_ENTRY_IMPORT:
                     for imp in entry.imports:
@@ -200,10 +210,10 @@ class FlirtMatcher:
                             name = imp.name.decode('utf-8', errors='replace')
                             self._import_thunks[imp.address] = name
             pe.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug('Unable to build PE import-thunk map: %s', exc)
 
-    def _deref_address(self, op_str: str) -> Optional[int]:
+    def _deref_address(self, op_str: str) -> int | None:
         """Extract address from 'dword ptr [0x401234]' style operands."""
         import re
         m = re.search(r'\[(?:0x)?([0-9a-fA-F]+)\]', op_str)
@@ -214,7 +224,7 @@ class FlirtMatcher:
                 pass
         return None
 
-    def _parse_imm(self, op_str: str) -> Optional[int]:
+    def _parse_imm(self, op_str: str) -> int | None:
         try:
             return int(op_str.strip(), 0)
         except (ValueError, TypeError):
@@ -223,7 +233,8 @@ class FlirtMatcher:
     def _load_db(self) -> dict:
         db_path = os.path.join(os.path.dirname(__file__), 'data', 'flirt_sigs.json')
         try:
-            with open(db_path, 'r') as f:
+            with open(db_path) as f:
                 return json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            logger.warning('Unable to load heuristic signature data: %s', exc)
             return {}

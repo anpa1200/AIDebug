@@ -3,35 +3,87 @@
  * AIDebug — Automatic Unpacking Detector
  *
  * Hooks VirtualProtect / NtProtectVirtualMemory to detect the
- * RWX → R-X protection change that signals a packer has finished
- * writing and is about to hand off to the unpacked code.
+ * writable → non-writable executable protection change that may indicate newly written code.
  *
- * When detected, sends a message back to Python with:
- *   { type: 'unpack_complete', address, size, old_protect, new_protect, oep_hint }
- *
- * The Python engine then:
- *   1. Reads the newly-executable region
- *   2. Re-disassembles from the entry point hint
- *   3. Re-analyzes with Claude
+ * This is a heuristic signal, not proof that unpacking completed. When a
+ * transition is detected it reports a bounded entry-point candidate; it does
+ * not dump, re-disassemble, or automatically execute newly written memory.
  */
 
+var PAGE_READWRITE               = 0x04;
+var PAGE_WRITECOPY               = 0x08;
+var PAGE_EXECUTE                 = 0x10;
 var PAGE_EXECUTE_READ            = 0x20;
-var PAGE_EXECUTE_READ_WRITE      = 0x40;
+var PAGE_EXECUTE_READWRITE       = 0x40;
 var PAGE_EXECUTE_WRITECOPY       = 0x80;
-var RWX_FLAGS = [PAGE_EXECUTE_READ_WRITE, PAGE_EXECUTE_WRITECOPY];
-var RX_FLAGS  = [PAGE_EXECUTE_READ, 0x10]; // 0x10 = PAGE_EXECUTE
 
-// Track regions that were allocated RWX
-var rwxRegions = {};   // address_str -> { address, size, alloc_time }
+function baseProtection(value) { return value & 0xff; }
+function isWritable(value) {
+    var base = baseProtection(value);
+    return [PAGE_READWRITE, PAGE_WRITECOPY, PAGE_EXECUTE_READWRITE,
+            PAGE_EXECUTE_WRITECOPY].indexOf(base) !== -1;
+}
+function isNonWritableExecutable(value) {
+    var base = baseProtection(value);
+    return base === PAGE_EXECUTE || base === PAGE_EXECUTE_READ;
+}
+
+// Track bounded regions that were allocated writable.
+var writableRegions = {};   // address_str -> { address, size, alloc_time }
+var writableOrder = [];
+var MAX_TRACKED_REGIONS = 4096;
+var installedHooks = {};
+var installedCount = 0;
+
+function trackRegion(key, region) {
+    if (!writableRegions[key]) writableOrder.push(key);
+    writableRegions[key] = region;
+    while (writableOrder.length > MAX_TRACKED_REGIONS) {
+        delete writableRegions[writableOrder.shift()];
+    }
+}
+
+function untrackRegion(key) {
+    delete writableRegions[key];
+    var index = writableOrder.indexOf(key);
+    if (index !== -1) writableOrder.splice(index, 1);
+}
+
+function claimHook(name, address) {
+    return !!address && !installedHooks[name];
+}
+
+function attachHook(name, address, callbacks) {
+    if (!claimHook(name, address)) return false;
+    try {
+        Interceptor.attach(address, callbacks);
+        installedHooks[name] = true;
+        installedCount++;
+        return true;
+    } catch(e) {
+        send({type: 'hook_error', tracer: 'protection', hook: name, error: String(e).slice(0, 256)});
+        return false;
+    }
+}
+
+function findModuleExport(moduleName, funcName) {
+    try {
+        return Process.getModuleByName(moduleName).findExportByName(funcName);
+    } catch(e) {
+        return null;
+    }
+}
+
+function installAvailableProtectionHooks() {
 
 // -----------------------------------------------------------------------
-// Hook VirtualAlloc / VirtualAllocEx to track RWX allocations
+// Hook VirtualAlloc / VirtualAllocEx to track writable allocations
 // -----------------------------------------------------------------------
 
 function hookVirtualAlloc(funcName) {
-    var addr = Module.findExportByName('kernel32.dll', funcName);
-    if (!addr) return;
-    Interceptor.attach(addr, {
+    var addr = findModuleExport('kernel32.dll', funcName);
+    if (!claimHook(funcName, addr)) return;
+    attachHook(funcName, addr, {
         onEnter: function(args) {
             // VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect)
             // VirtualAllocEx(hProcess, lpAddress, dwSize, flAllocationType, flProtect)
@@ -40,15 +92,15 @@ function hookVirtualAlloc(funcName) {
             this._protect = args[offset + 3].toUInt32();
         },
         onLeave: function(retval) {
-            if (!retval.isNull() && RWX_FLAGS.indexOf(this._protect) !== -1) {
+            if (!retval.isNull() && isWritable(this._protect)) {
                 var key = retval.toString();
-                rwxRegions[key] = {
+                trackRegion(key, {
                     address:    retval,
                     size:       this._size,
                     alloc_time: Date.now(),
-                };
+                });
                 send({
-                    type:    'rwx_alloc',
+                    type:    'writable_alloc',
                     address: retval.toString(),
                     size:    this._size,
                 });
@@ -64,9 +116,9 @@ hookVirtualAlloc('VirtualAllocEx');
 // Hook NtAllocateVirtualMemory (NT layer)
 // -----------------------------------------------------------------------
 
-var ntAlloc = Module.findExportByName('ntdll.dll', 'NtAllocateVirtualMemory');
-if (ntAlloc) {
-    Interceptor.attach(ntAlloc, {
+var ntAlloc = findModuleExport('ntdll.dll', 'NtAllocateVirtualMemory');
+if (claimHook('NtAllocateVirtualMemory', ntAlloc)) {
+    attachHook('NtAllocateVirtualMemory', ntAlloc, {
         onEnter: function(args) {
             // NtAllocateVirtualMemory(ProcessHandle, BaseAddress*, ZeroBits, RegionSize*, AllocType, Protect)
             this._basePtr  = args[1];
@@ -74,13 +126,13 @@ if (ntAlloc) {
             this._protect  = args[5].toUInt32();
         },
         onLeave: function(retval) {
-            if (retval.toUInt32() === 0 && RWX_FLAGS.indexOf(this._protect) !== -1) {
+            if (retval.toUInt32() === 0 && isWritable(this._protect)) {
                 try {
                     var base = this._basePtr.readPointer();
                     var size = this._sizePtr.readULong();
                     var key  = base.toString();
-                    rwxRegions[key] = { address: base, size: size, alloc_time: Date.now() };
-                    send({ type: 'rwx_alloc', address: key, size: size });
+                    trackRegion(key, { address: base, size: size, alloc_time: Date.now() });
+                    send({ type: 'writable_alloc', address: key, size: size.toString() });
                 } catch(e) {}
             }
         }
@@ -91,9 +143,9 @@ if (ntAlloc) {
 // Hook VirtualProtect — the key detection point
 // -----------------------------------------------------------------------
 
-var vpAddr = Module.findExportByName('kernel32.dll', 'VirtualProtect');
-if (vpAddr) {
-    Interceptor.attach(vpAddr, {
+var vpAddr = findModuleExport('kernel32.dll', 'VirtualProtect');
+if (claimHook('VirtualProtect', vpAddr)) {
+    attachHook('VirtualProtect', vpAddr, {
         onEnter: function(args) {
             // VirtualProtect(lpAddress, dwSize, flNewProtect, lpflOldProtect)
             this._addr       = args[0];
@@ -111,15 +163,15 @@ if (vpAddr) {
             var oldP = 0;
             try { oldP = this._oldProtOut.readU32(); } catch(e) {}
 
-            // Detect RWX → R-X transition on a previously-RWX region
-            var wasRwx  = RWX_FLAGS.indexOf(oldP)  !== -1;
-            var isNowRx = RX_FLAGS.indexOf(newP)   !== -1;
+            // Detect a writable → non-writable executable transition.
+            var wasWritable = isWritable(oldP);
+            var isNowExecutable = isNonWritableExecutable(newP);
 
             // Also check if the region is one we tracked
-            var trackedRwx = rwxRegions.hasOwnProperty(key);
+            var trackedWritable = writableRegions.hasOwnProperty(key);
 
-            if ((wasRwx || trackedRwx) && isNowRx) {
-                // Attempt to read the first bytes to find the OEP
+            if ((wasWritable || trackedWritable) && isNowExecutable) {
+                // Inspect a bounded prefix for an entry-point candidate.
                 var oepHint = '0x0';
                 try {
                     // Look for a valid function prologue in the first 256 bytes
@@ -130,7 +182,7 @@ if (vpAddr) {
                     for (var i = 0; i < bytes.length - 2; i++) {
                         if ((bytes[i] === 0x55 && bytes[i+1] === 0x8B && bytes[i+2] === 0xEC) ||
                             (bytes[i] === 0x48 && bytes[i+1] === 0x89)) {
-                            oepHint = ptr(this._addr.add(i)).toString();
+                            oepHint = this._addr.add(i).toString();
                             break;
                         }
                     }
@@ -142,16 +194,16 @@ if (vpAddr) {
                 }
 
                 send({
-                    type:        'unpack_complete',
+                    type:        'protection_transition',
                     address:     this._addr.toString(),
                     size:        this._size,
                     old_protect: oldP,
                     new_protect: newP,
-                    oep_hint:    oepHint,
+                    entry_point_candidate: oepHint,
                 });
 
                 // Remove from tracked regions
-                delete rwxRegions[key];
+                untrackRegion(key);
             }
         }
     });
@@ -161,9 +213,9 @@ if (vpAddr) {
 // Hook NtProtectVirtualMemory (NT layer, same logic)
 // -----------------------------------------------------------------------
 
-var ntProtect = Module.findExportByName('ntdll.dll', 'NtProtectVirtualMemory');
-if (ntProtect) {
-    Interceptor.attach(ntProtect, {
+var ntProtect = findModuleExport('ntdll.dll', 'NtProtectVirtualMemory');
+if (claimHook('NtProtectVirtualMemory', ntProtect)) {
+    attachHook('NtProtectVirtualMemory', ntProtect, {
         onEnter: function(args) {
             // NtProtectVirtualMemory(ProcessHandle, BaseAddress*, NumberOfBytesToProtect*, NewAccessProtection, OldAccessProtection*)
             this._basePtr    = args[1];
@@ -178,21 +230,39 @@ if (ntProtect) {
                 var newP = this._newProtect;
                 var key  = base.toString();
 
-                if ((RWX_FLAGS.indexOf(oldP) !== -1 || rwxRegions[key]) &&
-                    RX_FLAGS.indexOf(newP) !== -1) {
+                if ((isWritable(oldP) || writableRegions[key]) &&
+                    isNonWritableExecutable(newP)) {
                     send({
-                        type:        'unpack_complete',
+                        type:        'protection_transition',
                         address:     key,
                         size:        0,
                         old_protect: oldP,
                         new_protect: newP,
-                        oep_hint:    key,
+                        entry_point_candidate: key,
                     });
-                    delete rwxRegions[key];
+                    untrackRegion(key);
                 }
             } catch(e) {}
         }
     });
 }
+}
 
-send({ type: 'ready', message: 'Unpack detector loaded — monitoring VirtualProtect/NtProtectVirtualMemory' });
+var moduleObserver = Process.attachModuleObserver({
+    onAdded: function(module) {
+        var name = module.name.toLowerCase();
+        if (name !== 'kernel32.dll' && name !== 'ntdll.dll') return;
+        var before = installedCount;
+        installAvailableProtectionHooks();
+        if (installedCount !== before) {
+            send({type: 'hook_status', tracer: 'protection', installed_count: installedCount});
+        }
+    }
+});
+
+installAvailableProtectionHooks();
+send({
+    type: 'ready',
+    message: 'Protection-transition detector loaded',
+    installed_count: installedCount
+});

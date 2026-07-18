@@ -5,12 +5,20 @@
 [![CI](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml)
 [![Publish](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![External submissions](https://img.shields.io/badge/External%20submissions-submitted-yellow)](DISCOVERY.md)
-[![Accepted upstream](https://img.shields.io/badge/Accepted%20upstream-pending-lightgrey)](DISCOVERY.md)
-[![REMnux proposal](https://img.shields.io/badge/REMnux-submitted-yellow)](https://github.com/REMnux/salt-states/issues/345)
+[![External submissions](https://img.shields.io/badge/External%20submissions-mixed-informational)](DISCOVERY.md)
+[![awesome-yara](https://img.shields.io/badge/awesome--yara-accepted-brightgreen)](https://github.com/InQuest/awesome-yara/pull/78)
+[![REMnux proposal](https://img.shields.io/badge/REMnux-deferred-lightgrey)](https://github.com/REMnux/salt-states/issues/345)
 [![BlackArch proposal](https://img.shields.io/badge/BlackArch-submitted-yellow)](https://github.com/BlackArch/blackarch/issues/4965)
 
-AI-assisted malware reverse-engineering debugger that turns function behavior into ATT&CK mappings, YARA rules, IOC exports, and analyst reports.
+Malware reverse-engineering triage CLI/TUI with deterministic offline analysis,
+optional remote AI explanations, ATT&CK candidates, YARA seeds, heuristic IOC
+strings, and analyst reports.
+
+> **Release status:** the public PyPI release is v1.1.0. The offline mode,
+> optional dependency split, hardened dynamic path, and release gates described
+> below are post-v1.1.0 changes on `main`; they need a new semantic version and
+> tag before they are available from PyPI. Use the v1.1.0 tag for historical
+> package documentation.
 
 ## Project Maturity Evidence
 
@@ -24,6 +32,7 @@ AI-assisted malware reverse-engineering debugger that turns function behavior in
 | Validation | [validation plan](docs/validation-plan.md), deterministic tests for pattern detection and JSON export |
 | Maintenance | [maintainers](MAINTAINERS.md), [roadmap](ROADMAP.md), [changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md) |
 | Positioning | [comparison](docs/comparison.md), [curated-list resubmission plan](docs/curated-list-resubmission-plan.md) |
+| Release gate | [release readiness](docs/release-readiness.md), [`scripts/release-readiness.sh`](scripts/release-readiness.sh) |
 
 Curated-list resubmission should wait for additional release history and public
 usage evidence. This repository now documents the quality bar, but age and
@@ -31,8 +40,9 @@ adoption still require time.
 
 ## Screenshots
 
-Screenshots are taken from the companion walkthrough article:
-[AI-Powered Malware Debugger That Explains Every Function It Sees](https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a).
+These are illustrative captures associated with the companion walkthrough
+article; they are not automated accuracy evidence. See the
+[capture provenance and checksums](assets/screenshots/README.md).
 
 ![AIDebug TUI function analysis](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/tui-function-analysis.png)
 
@@ -46,52 +56,80 @@ Screenshots are taken from the companion walkthrough article:
 
 ## What This Is For
 
-A malware analyst runs AIDebug when a sample needs fast triage before deeper reverse engineering. The goal is not magic attribution. The goal is structured behavior, technique mapping, and detection-ready output.
+A malware analyst runs AIDebug when a sample needs fast triage before deeper reverse engineering. The goal is not magic attribution. The goal is structured behavior, technique hypotheses, and review-ready seed material.
 
 ## What It Produces
 
 | Output | Use |
 |---|---|
 | HTML report | Analyst review and case notes |
-| JSON report | SIEM/SOAR/OpenCTI ingest |
-| YARA rules | Detection engineering seed |
-| IOC list | Pivoting and enrichment |
+| Versioned JSON report | Custom SIEM/SOAR adapter input; no vendor-native or STIX schema is claimed |
+| YARA candidate rules | Detection-engineering seed that must be compiled and tested |
+| Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
 | CFG visualization | Function-level behavior review |
-| ATT&CK mapping | Technique-level reporting |
+| Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
 
-### PyPI install
-
-```bash
-pip install 1200km-aidebug
-aidebug --help
-```
-
-The PyPI distribution is named `1200km-aidebug`; the installed command is
-`aidebug`.
-
-Dynamic Frida instrumentation is optional:
-
-```bash
-pip install "1200km-aidebug[dynamic]"
-```
-
-### From source
+### Current source checkout
 
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dynamic]"
-aidebug --binary samples/example.exe --no-tui --report --json-export --out-dir reports/
+pip install -e .
+aidebug --help
+aidebug --version
+aidebug --binary /path/to/sample --offline --no-tui --json-export --out-dir reports/
 ```
 
-Set `ANTHROPIC_API_KEY` before AI-backed function analysis or YARA generation:
+The base source installation supports deterministic offline analysis. After the
+next release, the PyPI distribution remains `1200km-aidebug` and the command is
+`aidebug`.
+
+Remote AI analysis is an optional extra:
 
 ```bash
+pip install -e ".[ai]"
 export ANTHROPIC_API_KEY=sk-ant-...
+aidebug --binary /path/to/sample
+```
+
+The `ai` extra includes both the Anthropic SDK and `yara-python`: remote YARA
+candidates are accepted only after local compilation and broad-rule probes.
+
+Bulk CLI/report analysis with the remote provider also requires the explicit
+`--accept-ai-cost` acknowledgement. Review the [remote data
+boundary](docs/safety-model.md#remote-ai-data-boundary) first.
+
+Dynamic Frida instrumentation is optional:
+
+```bash
+pip install -e ".[dynamic]"
+```
+
+Install both optional capabilities from the checkout with `pip install -e
+".[all]"`.
+
+### Session storage
+
+The default SQLite database is
+`$XDG_STATE_HOME/aidebug/traces.db` (normally
+`~/.local/state/aidebug/traces.db`) on Linux and below `%LOCALAPPDATA%` on
+Windows. Override it per case with `--db /controlled/path/session.db` or
+`AIDEBUG_DB_PATH`. Existing repository-local `traces.db` files are not migrated
+automatically.
+
+### Source checkout with all optional capabilities
+
+```bash
+git clone https://github.com/anpa1200/AIDebug.git
+cd AIDebug
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[all]"
+aidebug --binary /path/to/sample --offline --no-tui --report --json-export --out-dir reports/
 ```
 
 ## Safe Examples
@@ -102,14 +140,14 @@ material:
 - [`examples/toy_xor_config.py`](examples/toy_xor_config.py) - a benign toy XOR
   loop for documentation.
 - [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
-  - representative JSON export.
+  - hand-authored schema-v2 offline session example with an all-zero mock hash.
 - [`examples/mock-output/aidebug-candidate.yar`](examples/mock-output/aidebug-candidate.yar)
-  - representative analyst-review YARA seed.
+  - illustrative analyst-review YARA seed.
 - [`examples/mock-output/aidebug-report.html`](examples/mock-output/aidebug-report.html)
-  - compact mock HTML report.
+  - compact illustrative HTML fragment, not a full current generated report.
 
-These examples are not live malware and are intended for README previews,
-parser tests, and integration demos.
+These examples are not live malware and are intended for documentation, parser
+tests, and integration demos. They are not execution or accuracy evidence.
 
 ## How It Works
 
@@ -118,14 +156,19 @@ flowchart LR
   Sample[Binary sample] --> Parse[PE/ELF parsing]
   Parse --> Disasm[Capstone disassembly]
   Disasm --> Patterns[Malware pattern detection]
-  Patterns --> Attack[ATT&CK mapping]
-  Attack --> IOC[IOC export]
-  IOC --> Report[HTML/JSON/YARA report]
+  Patterns --> Offline[Offline evidence summary]
+  Patterns --> Remote[Optional remote AI hypothesis]
+  Remote --> Attack[ATT&CK candidate]
+  Offline --> Report[HTML/JSON/YARA candidates]
+  Attack --> Report
 ```
 
 ## How AIDebug Feeds Detection Engineering
 
-AIDebug extracts function-level behavior, maps suspicious logic to ATT&CK technique IDs, emits YARA candidates, and exports IOC lists suitable for enrichment or OpenCTI ingest. Treat the output as analyst-reviewed detection seed material, not final truth.
+AIDebug records function-level evidence, produces deterministic pattern summaries
+offline, and can ask a remote model for explanations and ATT&CK candidates. JSON
+contains heuristic strings from higher-risk functions for analyst review. It is
+not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth.
 
 ## Coverage
 
@@ -133,9 +176,9 @@ AIDebug extracts function-level behavior, maps suspicious logic to ATT&CK techni
 |---|---|
 | Malware patterns | XOR loops, stack strings, API hashing, RDTSC timing, direct syscalls, NOP sleds, null-safe XOR, Base64 tables |
 | Formats | PE32, PE64, ELF |
-| Architectures | x86, x86-64, ARM, AArch64, RISC-V |
-| Dynamic mode | Frida, remote frida-server, INetSim sandbox support |
-| Reports | HTML, JSON, YARA |
+| Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
+| Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
+| Reports | HTML, versioned AIDebug JSON, and YARA candidates |
 
 ## Safety
 
@@ -146,7 +189,27 @@ only with authorization and isolation.
 
 ## Limitations And Honesty
 
-AIDebug accelerates triage. It does not replace manual reverse engineering, sandbox validation, or analyst judgment. ATT&CK mappings and YARA output must be reviewed before operational use.
+AIDebug accelerates triage. It does not replace manual reverse engineering,
+sandbox validation, or analyst judgment. Discovery is bounded and can miss
+indirect, packed, overlaid, stripped, or unreachable code. Heuristic library
+identification can collide. ATT&CK, risk, IOC, and YARA outputs require review.
+Dynamic static-to-runtime address mapping can be incomplete under ASLR/PIE.
+Tracer startup reports whether each observer is ready and how many hooks are
+installed at that moment; a zero count can increase when a watched module loads
+later and is not evidence that any target call was captured.
+
+Session databases and exports can contain sensitive sample and runtime evidence
+and are not encrypted by AIDebug. See the [safety and privacy
+model](docs/safety-model.md).
+
+Current protective defaults reject samples above 128 MiB, cap discovery at 300
+functions and 250 instructions per function, scan at most 100,000 symbols, cap
+stored import/export candidates at 50,000 each, cap dynamic instrumentation at 50
+function hooks, cap one YARA ruleset at the requested `--max-functions` value,
+and cap persisted API, network, and runtime records at 10,000 per category per
+session. These are resource guards, not coverage or retention guarantees.
+Generated filenames include the session ID so separate analyses of identically
+named samples do not silently overwrite one another in the same output folder.
 
 ## Companion Article
 
@@ -184,4 +247,3 @@ This project is part of the 1200km security research ecosystem. Use [AdversaryGr
 - [AdversaryGraph documentation](https://1200km.com/adversarygraph-docs/)
 - [Live ATT&CK/ATLAS workspace](https://1200km.com/threat-matrix/)
 - [1200km security research ecosystem](https://1200km.com/)
-

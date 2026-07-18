@@ -7,39 +7,184 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install validation dependencies
+        run: python -m pip install ".[dev]"
+
+      - name: Verify release metadata
+        run: |
+          python scripts/check_release_metadata.py
+          python scripts/check_evidence_assets.py
+          python scripts/check_docs.py
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Static security analysis
+        run: >-
+          python -m bandit -q -r analysis debugger reporting storage ui main.py config.py
+          --severity-level medium --confidence-level medium
+
+      - name: Compile illustrative YARA rule
+        run: python -c "import yara; yara.compile(filepath='examples/mock-output/aidebug-candidate.yar')"
+
+      - name: Syntax-check Frida JavaScript
+        run: |
+          for script in debugger/scripts/*.js; do
+            node --check "$script"
+          done
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+        run: python -m pip install ".[dev]"
+
+      - name: Verify installed dependencies
+        run: python -m pip check
 
       - name: Test
-        run: pytest -q
+        run: python -m pytest -q
+
+  textual-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install declared Textual compatibility floor
+        run: python -m pip install -e . "textual==0.52.0" "pytest>=8"
+
+      - name: Verify installed dependencies
+        run: python -m pip check
+
+      - name: Run headless TUI compatibility tests
+        run: python -m pytest -q tests/test_tui.py
+
+  dynamic-extra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install optional dynamic capability
+        run: python -m pip install -e ".[dynamic]" "pytest>=8"
+
+      - name: Verify Frida extra and dynamic contracts
+        run: |
+          python -m pip check
+          python -c "import frida; from debugger.engine import DebugEngine; assert DebugEngine().is_available"
+          python -m pytest -q tests/test_dynamic_cli.py tests/test_core_runtime.py
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Audit declared runtime dependencies
+        run: |
+          python -m pip install "pip-audit>=2.7"
+          python -m pip_audit --strict --requirement requirements.txt
+          python -m pip_audit --strict --requirement requirements-ai.txt
+          python -m pip_audit --strict --requirement requirements-dynamic.txt
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
+          cache: pip
+
+      - name: Install build tools
+        run: python -m pip install "build>=1.2" "twine>=5" "yara-python>=4.5"
 
       - name: Build distributions
+        run: python -m build
+
+      - name: Validate distributions
         run: |
-          python -m pip install --upgrade build
-          python -m build
+          python -m twine check --strict dist/*
+          python scripts/check_distribution.py dist/*
+
+      - name: Smoke-test built wheel
+        run: |
+          python -m venv /tmp/aidebug-wheel-smoke
+          /tmp/aidebug-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/aidebug-wheel-smoke/bin/python -m pip check
+          /tmp/aidebug-wheel-smoke/bin/aidebug --help >/dev/null
+          /tmp/aidebug-wheel-smoke/bin/aidebug --version
+          /tmp/aidebug-wheel-smoke/bin/python -c "from importlib.resources import files; assert files('analysis').joinpath('data/flirt_sigs.json').is_file()"
+          /tmp/aidebug-wheel-smoke/bin/python -c "from analysis.static_analyzer import StaticAnalyzer; info = StaticAnalyzer().analyze('/bin/true'); assert info.file_format == 'ELF'"
+          /tmp/aidebug-wheel-smoke/bin/aidebug --binary /bin/true --offline --no-tui --json-export --yara --max-functions 5 --out-dir /tmp/aidebug-wheel-output --db /tmp/aidebug-wheel-smoke.db
+          test -s /tmp/aidebug-wheel-output/true_session_1_export.json
+          test -s /tmp/aidebug-wheel-output/true_session_1.yar
+          python -c "import yara; yara.compile(filepath='/tmp/aidebug-wheel-output/true_session_1.yar')"
+
+      - name: Upload tested distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

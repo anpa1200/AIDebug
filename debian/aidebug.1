@@ -5,9 +5,10 @@ aidebug \- AI-assisted malware reverse-engineering debugger
 .B aidebug
 .RI [ options ]
 .SH DESCRIPTION
-AIDebug performs static and optional dynamic malware-analysis triage. It maps
-function-level behavior to MITRE ATT&CK, YARA candidates, IOC exports, JSON
-output, and HTML analyst reports.
+AIDebug performs static and optional dynamic malware-analysis triage. It emits
+deterministic findings, analyst-review YARA candidates, versioned JSON with
+heuristic IOC strings, and HTML reports. Optional remote analysis can suggest
+MITRE ATT&CK mappings that require analyst validation.
 .SH OPTIONS
 .TP
 .BR \-\-binary " " FILE
@@ -16,8 +17,33 @@ Analyze a PE or ELF binary.
 .BR \-\-mode " " MODE
 Analysis mode: static or dynamic.
 .TP
+.BR \-\-pid " " PID
+Attach dynamic mode to an existing process ID.
+.TP
+.BR \-\-frida-host " " HOST[:PORT]
+Use a remote Frida server in an operator-managed analysis target.
+.TP
 .B \-\-no-tui
 Use CLI output instead of the terminal interface.
+.TP
+.B \-\-offline
+Keep analysis local, use deterministic findings, and never call remote AI.
+This option is also available as
+.BR \-\-no-ai .
+.TP
+.BR \-\-max-functions " " N
+Bound the number of functions processed by a bulk analysis (default 25, maximum
+300). Dynamic mode uses the lower of N and its 50-function instrumentation cap.
+.TP
+.B \-\-accept-ai-cost
+Acknowledge remote-data handling and possible provider charges for bulk remote
+analysis. This flag is not authorization to send evidence off host.
+.TP
+.B \-\-list-sessions
+List stored analysis sessions.
+.TP
+.BR \-\-session " " ID
+Select a stored session for report, YARA, or JSON generation.
 .TP
 .B \-\-report
 Generate an HTML report.
@@ -30,8 +56,20 @@ Export analysis data as JSON.
 .TP
 .BR \-\-out-dir " " DIR
 Write report output to DIR.
+.TP
+.BR \-\-db " " FILE
+Use FILE as the SQLite session database.
+.TP
+.B \-\-version
+Print the AIDebug version and exit.
 .SH EXAMPLE
-.B aidebug --binary sample.exe --no-tui --report --json-export --out-dir reports/
+.B aidebug --binary sample.exe --offline --no-tui --report --json-export --out-dir reports/
+.PP
+Remote AI analysis requires the optional AI dependencies and an Anthropic API
+key, and sends sample-derived evidence to the configured model. Bulk remote
+analysis also requires
+.BR \-\-accept-ai-cost .
+See the upstream safety documentation before use.
 .SH SAFETY
 Use only in an isolated malware-analysis VM or authorized lab. Do not execute
 unknown samples on a host operating system.

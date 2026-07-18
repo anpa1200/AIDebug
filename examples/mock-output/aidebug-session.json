@@ -1,41 +1,95 @@
 {
-  "session": {
-    "tool": "AIDebug",
-    "version": "1.1.0",
-    "source": "safe mock output",
-    "binary": "toy_xor_config.py",
-    "mode": "static",
-    "format": "python-source-demo"
+  "_schema": "aidebug/session/v2",
+  "_exported": "2026-07-18T00:00:00+00:00",
+  "_privacy_notice": "Dynamic API and network records may contain sensitive arguments, URLs, headers, addresses, or payload excerpts. Handle accordingly.",
+  "binary": {
+    "filename": "safe-toy-xor-fixture.elf",
+    "path": "/redacted/safe-toy-xor-fixture.elf",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "arch": "x86-64",
+    "bits": 64,
+    "os_target": "Linux"
   },
-  "findings": [
+  "session": {
+    "id": 1,
+    "created_at": "2026-07-18T00:00:00+00:00"
+  },
+  "summary": {
+    "total_functions": 2,
+    "analyzed_functions": 2,
+    "risk_counts": {
+      "CRITICAL": 0,
+      "HIGH": 1,
+      "MEDIUM": 0,
+      "LOW": 1,
+      "UNKNOWN": 0
+    },
+    "mitre_techniques": {},
+    "api_calls_logged": 0,
+    "api_calls_truncated": false,
+    "network_events_logged": 0,
+    "network_events_truncated": false,
+    "runtime_events_logged": 0,
+    "runtime_events_truncated": false,
+    "highest_risk": "HIGH",
+    "ioc_strings": []
+  },
+  "functions": [
     {
-      "address": "0x00001000",
-      "suggested_name": "xor_decode_config",
-      "risk_level": "HIGH",
-      "summary": "Toy XOR loop decodes a local configuration-like string.",
-      "mitre_technique": "T1140 - Deobfuscate/Decode Files or Information",
-      "patterns": [
+      "address": "0x1000",
+      "address_int": 4096,
+      "name": "pattern_candidate_1000",
+      "instruction_count": 12,
+      "size_bytes": null,
+      "calls_to": [4224],
+      "called_from": [],
+      "strings_referenced": [],
+      "deterministic_patterns": [
         {
           "name": "xor_decryption_loop",
+          "description": "XOR loop candidate",
           "severity": "HIGH",
-          "evidence": "byte ^ key loop over local byte array"
+          "evidence": "non-zeroing XOR inside a backward branch"
         }
       ],
-      "analyst_note": "Mock example only. In real malware, inspect decoded output and callers."
+      "ai": {
+        "summary": "Deterministic pattern scan found a non-zeroing XOR inside a loop; inspect operands and output use.",
+        "parameters": [],
+        "return_value": "Unknown in offline analysis.",
+        "behaviors": [
+          "Pattern candidate: xor_decryption_loop"
+        ],
+        "mitre_technique": null,
+        "risk_level": "HIGH",
+        "notes": "Offline heuristic result; no remote model was called."
+      },
+      "snapshot": null,
+      "analyzed_at": "2026-07-18T00:00:01+00:00"
     },
     {
-      "address": "0x00001080",
-      "suggested_name": "emit_decoded_value",
-      "risk_level": "INFO",
-      "summary": "Prints decoded toy value to stdout.",
-      "mitre_technique": null,
-      "patterns": []
+      "address": "0x1080",
+      "address_int": 4224,
+      "name": "sub_00001080",
+      "instruction_count": 3,
+      "size_bytes": null,
+      "calls_to": [],
+      "called_from": [4096],
+      "strings_referenced": [],
+      "deterministic_patterns": [],
+      "ai": {
+        "summary": "No configured deterministic pattern matched this bounded function body.",
+        "parameters": [],
+        "return_value": "Unknown in offline analysis.",
+        "behaviors": [],
+        "mitre_technique": null,
+        "risk_level": "LOW",
+        "notes": "No match is not proof that the function is benign."
+      },
+      "snapshot": null,
+      "analyzed_at": "2026-07-18T00:00:02+00:00"
     }
   ],
-  "iocs": {
-    "ipv4": [],
-    "domains": [],
-    "urls": [],
-    "files": []
-  }
+  "api_calls": [],
+  "network_events": [],
+  "runtime_events": []
 }

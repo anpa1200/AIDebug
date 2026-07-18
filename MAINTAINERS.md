@@ -13,7 +13,7 @@ triage tool. The maintained scope is:
 - behavioral pattern detection
 - ATT&CK candidate mapping
 - analyst-reviewed YARA seed generation
-- JSON, HTML, IOC, and report output
+- versioned JSON, HTML, heuristic IOC-string, and report output
 - optional Frida-based dynamic instrumentation in isolated labs
 - packaging for Python, Debian-family labs, Kali, and REMnux-style workflows
 
@@ -34,9 +34,9 @@ Out of scope:
 
 ## Release Process
 
-1. Run the local test suite.
-2. Build the Python package.
-3. Update `CHANGELOG.md`.
-4. Tag the release.
-5. Publish the package.
-6. Update external submission tracking in `DISCOVERY.md`.
+1. Complete the metadata and release-note updates.
+2. Run `./scripts/release-readiness.sh`.
+3. Merge only after required CI and review pass.
+4. Tag the exact protected release commit.
+5. Publish through the protected PyPI environment.
+6. Verify PyPI provenance and update external status tracking.

@@ -1,7 +1,8 @@
 # Sample Evidence
 
-This file points reviewers to safe evidence that demonstrates what AIDebug
-produces without including live malware.
+This file points reviewers to safe illustrative material that demonstrates the
+shape of AIDebug output without including live malware. Screenshots and mock
+outputs are not automated validation proof or detection-accuracy evidence.
 
 ## Safe Inputs
 
@@ -9,11 +10,16 @@ produces without including live malware.
 
 ## Mock Outputs
 
-- `examples/mock-output/aidebug-session.json`: representative session export.
-- `examples/mock-output/aidebug-candidate.yar`: representative YARA seed.
-- `examples/mock-output/aidebug-report.html`: representative HTML report.
+- `examples/mock-output/aidebug-session.json`: hand-authored schema-v2 offline
+  session example with an all-zero mock hash and redacted path.
+- `examples/mock-output/aidebug-candidate.yar`: illustrative YARA seed.
+- `examples/mock-output/aidebug-report.html`: compact illustrative HTML
+  fragment, not a complete current generated report.
 
 ## Screenshots
+
+The historical captures have a documented integrity manifest and limitations in
+`assets/screenshots/README.md`.
 
 - `assets/screenshots/tui-function-analysis.png`
 - `assets/screenshots/behavioral-patterns-tab.png`
@@ -26,4 +32,12 @@ produces without including live malware.
 - `pyproject.toml`: Python package metadata.
 - `debian/`: Debian-family packaging files.
 - `packaging/kali-new-tool-request.md`: Kali submission material.
-- `packaging/remnux-submission.md`: REMnux submission material.
+- `packaging/remnux-submission.md`: deferred REMnux proposal and outcome.
+
+## Repeatable Evidence
+
+- `scripts/check_evidence_assets.py` checks screenshot integrity/dimensions and
+  parses the mock JSON.
+- CI compiles the mock YARA file with `yara-python`.
+- Unit tests and the release gate—not screenshots—are the acceptance evidence
+  for a specific commit.

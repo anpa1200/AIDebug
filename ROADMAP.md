@@ -4,7 +4,7 @@ This roadmap is intentionally conservative. AIDebug should become more useful
 to malware analysts by becoming more reproducible, better documented, and more
 careful about evidence quality.
 
-## 1.1: Reproducible Analysis Baseline
+## Next: Reproducible Analysis Baseline
 
 - Add a larger safe benchmark corpus made from toy binaries and mock traces.
 - Add expected outputs for ATT&CK candidates, risk labels, IOC extraction, and
@@ -12,24 +12,29 @@ careful about evidence quality.
 - Add JSON schema validation for exported sessions.
 - Add tests for static analyzer edge cases across PE and ELF samples.
 
-## 1.2: Analyst Review Workflow
+## Later: Analyst Review Workflow
 
 - Add a review status field to exported findings.
 - Separate generated hypotheses from analyst-confirmed findings.
 - Add report sections for false-positive notes and reviewer decisions.
 - Add import/export examples for SIEM and CTI platforms.
 
-## 1.3: Dynamic Mode Hardening
+## Later: Dynamic Mode Hardening
 
-- Add clearer sandbox setup guidance for Frida, Wine, and INetSim workflows.
+- Add clearer sandbox setup guidance for Frida, Wine, and operator-managed
+  network-simulation workflows.
 - Add safer defaults around process attach and remote Frida hosts.
-- Add dynamic-mode mock tests that do not execute malware.
+- Add safe live-fixture integration coverage across explicitly supported target
+  operating systems and architectures; current tests exercise mock contracts.
 
-## 1.4: Packaging And Distribution
+## Packaging And Distribution
 
-- Continue Kali, REMnux, and BlackArch submission tracking.
-- Add reproducible package build notes.
-- Add install smoke tests for fresh virtual environments.
+- Revisit deferred/closed distribution proposals only after their documented
+  maturity gates are met; continue accurate status tracking for open proposals.
+- Validate Debian/Kali and REMnux proposals on their actual target
+  distributions before claiming support.
+- Evaluate bit-for-bit reproducible builds and a release SBOM in addition to
+  the existing isolated build, wheel smoke, and PyPI provenance checks.
 
 ## Curated-List Readiness
 

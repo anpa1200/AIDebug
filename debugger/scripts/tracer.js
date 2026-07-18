@@ -39,6 +39,8 @@ var WATCHED_APIS = {
         'HttpOpenRequestA', 'HttpOpenRequestW',
         'HttpSendRequestA', 'HttpSendRequestW',
         'InternetReadFile', 'InternetWriteFile',
+    ],
+    'urlmon.dll': [
         'URLDownloadToFileA', 'URLDownloadToFileW',
     ],
     'ws2_32.dll': [
@@ -62,30 +64,49 @@ var WATCHED_APIS = {
     ],
 };
 
-function tryReadString(ptr) {
+var nextCallId = 0;
+var installedHooks = {};
+var installedCount = 0;
+
+function findModuleExport(moduleName, funcName) {
+    try {
+        return Process.getModuleByName(moduleName).findExportByName(funcName);
+    } catch(e) {
+        return null;
+    }
+}
+
+function tryReadString(ptr, isWide) {
     if (!ptr || ptr.isNull()) return null;
-    try {
-        var s = ptr.readCString();
-        if (s && s.length > 0 && s.length < 512) return s;
-    } catch(e) {}
-    try {
-        var w = ptr.readUtf16String();
-        if (w && w.length > 0 && w.length < 512) return '[W] ' + w;
-    } catch(e) {}
+    if (isWide) {
+        try {
+            var w = ptr.readUtf16String(512);
+            if (w && w.length > 0) return '[W] ' + w;
+        } catch(e) {}
+    } else {
+        try {
+            var s = ptr.readCString(512);
+            if (s && s.length > 0) return s;
+        } catch(e) {}
+    }
     return null;
 }
 
 function hookApi(moduleName, funcName) {
+    var hookKey = moduleName.toLowerCase() + '!' + funcName;
+    if (installedHooks[hookKey]) return false;
     try {
-        var addr = Module.findExportByName(moduleName, funcName);
-        if (!addr) return;
+        var addr = findModuleExport(moduleName, funcName);
+        if (!addr) return false;
 
         Interceptor.attach(addr, {
             onEnter: function(args) {
+                this._callId = ++nextCallId;
                 var argList = [];
+                var isWide = /W$/.test(funcName);
                 for (var i = 0; i < 6; i++) {
                     try {
-                        var s = tryReadString(args[i]);
+                        var s = tryReadString(args[i], isWide);
                         if (s) {
                             argList.push({index: i, value: s, type: 'string'});
                         } else {
@@ -97,6 +118,8 @@ function hookApi(moduleName, funcName) {
                 }
                 send({
                     type:     'api_call',
+                    call_id:  this._callId,
+                    thread_id: Process.getCurrentThreadId(),
                     module:   moduleName,
                     function: funcName,
                     address:  addr.toString(),
@@ -107,23 +130,40 @@ function hookApi(moduleName, funcName) {
             onLeave: function(retval) {
                 send({
                     type:     'api_return',
+                    call_id:  this._callId,
+                    thread_id: Process.getCurrentThreadId(),
                     function: this._fn,
                     retval:   retval.toString(),
                 });
             }
         });
+        installedHooks[hookKey] = true;
+        installedCount++;
+        return true;
     } catch(e) {
-        // Module may not be loaded yet — silently skip
+        send({
+            type: 'hook_error',
+            tracer: 'api',
+            hook: hookKey,
+            error: String(e).slice(0, 256)
+        });
+        return false;
     }
 }
 
-// Install all hooks
-var count = 0;
-Object.keys(WATCHED_APIS).forEach(function(mod) {
-    WATCHED_APIS[mod].forEach(function(fn) {
-        hookApi(mod, fn);
-        count++;
-    });
+// Frida 17 module observers cover both modules already present and DLLs loaded
+// later by a process spawned in the suspended state.
+var moduleObserver = Process.attachModuleObserver({
+    onAdded: function(module) {
+        var moduleName = module.name.toLowerCase();
+        var watched = WATCHED_APIS[moduleName];
+        if (!watched) return;
+        var before = installedCount;
+        watched.forEach(function(fn) { hookApi(moduleName, fn); });
+        if (installedCount !== before) {
+            send({type: 'hook_status', tracer: 'api', installed_count: installedCount});
+        }
+    }
 });
 
-send({type: 'ready', message: 'Tracer loaded, monitoring ' + count + ' API hooks'});
+send({type: 'ready', message: 'Tracer loaded', installed_count: installedCount});
