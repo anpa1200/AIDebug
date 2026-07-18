@@ -1,6 +1,11 @@
 # REMnux Submission Prep: AIDebug
 
-## Proposed state
+## Deferred proposal
+
+REMnux issue #345 was closed on 2026-06-22. The maintainer deferred inclusion
+until the project demonstrates ongoing maintenance and greater maturity. The
+state below is retained only as a version-pinned proposal for a future review;
+it is not part of REMnux.
 
 Candidate Salt state: `packaging/remnux/aidebug.sls`
 
@@ -34,5 +39,6 @@ aidebug --help
 
 ## Notes
 
-The state installs the PyPI package into `/opt/aidebug` using REMnux's common
-virtualenv pattern and creates `/usr/local/bin/aidebug`.
+The proposal installs the reviewed v1.1.0 PyPI package into `/opt/aidebug` using
+REMnux's virtualenv pattern and creates `/usr/local/bin/aidebug`. It deliberately
+does not track or upgrade to the latest unreviewed PyPI release.

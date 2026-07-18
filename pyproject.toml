@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "1200km-aidebug"
 version = "1.1.0"
-description = "AI-assisted malware reverse-engineering debugger with ATT&CK, YARA, IOC, and report output."
+description = "Malware triage with offline heuristics, optional AI, ATT&CK candidates, YARA seeds, and reports."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -30,10 +30,10 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Security",
 ]
 dependencies = [
-  "anthropic>=0.40",
   "capstone>=5",
   "pefile>=2023.2.7",
   "pyelftools>=0.31",
@@ -42,8 +42,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dynamic = ["frida>=16"]
-dev = ["build>=1.2", "pytest>=8", "ruff>=0.6"]
+ai = ["anthropic>=0.40", "yara-python>=4.5"]
+dynamic = ["frida>=17,<18"]
+all = ["anthropic>=0.40", "frida>=17,<18", "yara-python>=4.5"]
+dev = [
+  "anthropic>=0.40",
+  "bandit>=1.7.9",
+  "build>=1.2",
+  "packaging>=24",
+  "pip-audit>=2.7",
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.6",
+  "tomli>=2; python_version < '3.11'",
+  "twine>=5",
+  "yara-python>=4.5",
+]
 
 [project.scripts]
 aidebug = "main:main"
@@ -51,7 +65,7 @@ aidebug = "main:main"
 [project.urls]
 Homepage = "https://github.com/anpa1200/AIDebug"
 Repository = "https://github.com/anpa1200/AIDebug"
-Documentation = "https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a"
+Documentation = "https://github.com/anpa1200/AIDebug#readme"
 Issues = "https://github.com/anpa1200/AIDebug/issues"
 Changelog = "https://github.com/anpa1200/AIDebug/blob/main/CHANGELOG.md"
 Security = "https://github.com/anpa1200/AIDebug/blob/main/SECURITY.md"

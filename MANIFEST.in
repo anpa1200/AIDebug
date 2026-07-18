@@ -2,8 +2,13 @@ include LICENSE
 include README.md
 include SECURITY.md
 include CITATION.cff
-recursive-include assets/screenshots *.png
+include CHANGELOG.md
+include RELEASE.md
+include requirements*.txt
+recursive-include assets/screenshots *.png *.md
 recursive-include docs *.md
 recursive-include examples *.md *.py *.json *.yar *.html
-recursive-include data *.json
 recursive-include debugger/scripts *.js
+recursive-include scripts *.py *.sh
+recursive-include debian *
+recursive-include packaging *.md *.sls

@@ -1,3 +1,2 @@
-Test-Command: aidebug --help
+Tests: smoke
 Depends: @
-Restrictions: superficial

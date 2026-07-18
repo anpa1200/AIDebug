@@ -2,18 +2,19 @@
 PatternDetector — identifies common malware behavioral patterns in disassembled functions.
 
 Detected patterns:
-  - XOR decryption loop          (string/config decryption)
-  - Stack string construction    (anti-string-scan technique)
-  - API hash resolution          (shellcode / loader technique)
-  - RDTSC timing check           (sandbox/VM evasion)
-  - Direct syscall stub          (EDR bypass)
-  - NOP sled                     (shellcode alignment)
-  - Null-byte-safe XOR           (common in encoded shellcode)
-  - Base64 character table ref   (encoded payload)
+  - XOR transformation loop      (possible string/config decoding)
+  - Stack-write sequence         (possible runtime string construction)
+  - Rotate/XOR hash loop         (possible API hash resolution)
+  - RDTSC timing sequence        (profiling or possible anti-analysis)
+  - Direct syscall instruction   (context-dependent candidate)
+  - NOP sequence                 (compiler padding or shellcode alignment)
+  - Null-preserving XOR          (possible encoder sequence)
+  - Base64-like alphabet ref     (benign or malicious encoding)
 """
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
+
 from .disassembler import Function, Instruction
 
 
@@ -35,6 +36,9 @@ class MalwarePattern:
 
 
 class PatternDetector:
+
+    def __init__(self, binary_info=None):
+        self.binary_info = binary_info
 
     def detect(self, function: Function) -> list[MalwarePattern]:
         patterns = []
@@ -103,7 +107,10 @@ class PatternDetector:
 
                     results.append(MalwarePattern(
                         name='xor_decryption_loop',
-                        description='XOR loop — likely decrypting a string, config, or payload buffer',
+                        description=(
+                            'XOR loop candidate — may transform a string, configuration, or buffer; '
+                            'validate the operands and data flow'
+                        ),
                         severity='HIGH',
                         address=target,
                         evidence=f'xor {xi.op_str}  @ loop 0x{target:08x}–0x{insn.address:08x}',
@@ -133,7 +140,10 @@ class PatternDetector:
                 if consecutive >= 4:
                     return [MalwarePattern(
                         name='stack_string',
-                        description='Stack string construction — string built byte-by-byte on stack to evade static string scanning',
+                        description=(
+                            'Stack-write sequence — may construct a string at runtime; this can '
+                            'obscure static strings but also occurs in benign compiled code'
+                        ),
                         severity='MEDIUM',
                         address=start_addr,
                         evidence=f'{consecutive} consecutive byte-MOVs to stack starting 0x{start_addr:08x}',
@@ -143,7 +153,10 @@ class PatternDetector:
         if consecutive >= 4:
             return [MalwarePattern(
                 name='stack_string',
-                description='Stack string construction — string built byte-by-byte on stack to evade static string scanning',
+                description=(
+                    'Stack-write sequence — may construct a string at runtime; this can '
+                    'obscure static strings but also occurs in benign compiled code'
+                ),
                 severity='MEDIUM',
                 address=start_addr,
                 evidence=f'{consecutive} consecutive byte-MOVs to stack',
@@ -167,7 +180,7 @@ class PatternDetector:
             ror_insn = next(i for i in insns if i.mnemonic.lower() in ('ror', 'rol'))
             return [MalwarePattern(
                 name='api_hash_resolution',
-                description='API hash resolution loop — resolves Windows API addresses at runtime by hashing module/function names (common in shellcode and position-independent code)',
+                description='API hash-resolution candidate — rotate/XOR loop may resolve Windows APIs dynamically; validate its inputs and call sites',
                 severity='HIGH',
                 address=ror_insn.address,
                 evidence=f'{ror_insn.mnemonic} {ror_insn.op_str} inside loop with xor',
@@ -180,7 +193,10 @@ class PatternDetector:
         if len(rdtsc_insns) >= 2:
             return [MalwarePattern(
                 name='rdtsc_timing_check',
-                description='Double RDTSC timing check — measures execution delta to detect sandboxes or single-step debugging',
+                description=(
+                    'Repeated RDTSC timing sequence — may support profiling or an anti-analysis '
+                    'timing check; validate the measured delta and branch behavior'
+                ),
                 severity='HIGH',
                 address=rdtsc_insns[0].address,
                 evidence=f'Two RDTSC at 0x{rdtsc_insns[0].address:08x} and 0x{rdtsc_insns[1].address:08x}',
@@ -188,7 +204,10 @@ class PatternDetector:
         if rdtsc_insns:
             return [MalwarePattern(
                 name='rdtsc_timing_check',
-                description='RDTSC instruction — high-resolution timestamp read, possible timing-based sandbox/VM detection',
+                description=(
+                    'RDTSC timestamp read — common in profiling and low-level code, and sometimes '
+                    'used in timing-based anti-analysis checks'
+                ),
                 severity='MEDIUM',
                 address=rdtsc_insns[0].address,
                 evidence=f'rdtsc @ 0x{rdtsc_insns[0].address:08x}',
@@ -196,22 +215,41 @@ class PatternDetector:
         return []
 
     def _direct_syscall(self, insns: list) -> list:
-        """Detect direct syscall stubs (INT 2E, SYSCALL, SYSENTER) bypassing ntdll hooks."""
+        """Detect direct syscalls without treating normal Linux syscalls as malicious."""
+        os_target = getattr(self.binary_info, 'os_target', 'Unknown')
+        if os_target == 'Windows':
+            severity = 'HIGH'
+            description = (
+                'Direct Windows syscall candidate — may bypass ntdll user-mode hooks; '
+                'validate the surrounding stub and syscall number'
+            )
+        elif os_target == 'Linux':
+            severity = 'INFO'
+            description = (
+                'Direct Linux syscall instruction — a normal userspace/kernel boundary; '
+                'security significance depends on the syscall number and surrounding behavior'
+            )
+        else:
+            severity = 'MEDIUM'
+            description = (
+                'Direct syscall instruction observed — operating-system context is unknown; '
+                'validate before treating it as evasion'
+            )
         for insn in insns:
             mnem = insn.mnemonic.lower()
             if mnem in ('syscall', 'sysenter'):
                 return [MalwarePattern(
                     name='direct_syscall',
-                    description='Direct syscall instruction — bypasses ntdll.dll usermode hooks by invoking the kernel directly (EDR/AV evasion)',
-                    severity='HIGH',
+                    description=description,
+                    severity=severity,
                     address=insn.address,
                     evidence=f'{mnem} @ 0x{insn.address:08x}',
                 )]
             if mnem == 'int' and insn.op_str.strip() in ('0x2e', '2eh', '0x2E'):
                 return [MalwarePattern(
                     name='direct_syscall',
-                    description='INT 2E direct syscall (legacy Windows kernel gate) — bypasses ntdll hooks',
-                    severity='HIGH',
+                    description=description,
+                    severity=severity,
                     address=insn.address,
                     evidence=f'int 0x2e @ 0x{insn.address:08x}',
                 )]
@@ -229,7 +267,10 @@ class PatternDetector:
                 if run >= 5:
                     return [MalwarePattern(
                         name='nop_sled',
-                        description='NOP sled — series of NOP instructions, often used for shellcode alignment or padding',
+                        description=(
+                            'NOP sequence — may be shellcode alignment, compiler padding, '
+                            'or benign hot-patch space'
+                        ),
                         severity='INFO',
                         address=start,
                         evidence=f'{run}+ NOPs starting at 0x{start:08x}',
@@ -250,7 +291,7 @@ class PatternDetector:
                     c.mnemonic.lower() == 'xor'):
                 return [MalwarePattern(
                     name='null_preserving_xor',
-                    description='Null-byte-safe XOR encoding — XOR loop that skips zero bytes, typical of custom shellcode encoders',
+                    description='Null-preserving XOR candidate — test/branch/XOR sequence may be an encoder; validate the enclosing loop and buffer use',
                     severity='HIGH',
                     address=a.address,
                     evidence=f'test/jz/xor sequence @ 0x{a.address:08x}',
@@ -265,8 +306,8 @@ class PatternDetector:
             if clean == B64 or (len(clean) >= 32 and all(c in B64 + '=' for c in clean)):
                 return [MalwarePattern(
                     name='base64_alphabet_reference',
-                    description='Base64 alphabet referenced — function likely encodes or decodes Base64 data (common for payload staging or C2 traffic encoding)',
-                    severity='MEDIUM',
+                    description='Base64-like alphabet referenced — common in benign and malicious encoders; validate surrounding data flow',
+                    severity='INFO',
                     address=function.address,
                     evidence=f'String: "{clean[:32]}…"',
                 )]

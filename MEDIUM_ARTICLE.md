@@ -1,12 +1,16 @@
-# I Built an AI-Powered Malware Debugger That Explains Every Function It Sees
+# I Built an AI-Assisted Malware Debugger That Prioritizes Discovered Functions
 
-## How I combined Claude AI, Frida, Capstone, and a suite of static analysis engines into a reverse engineering tool that talks back
+## How I combined optional Claude analysis, Frida, Capstone, and deterministic heuristics into a review-first triage workflow
+
+> Repository edition, corrected 2026-07-18: this text distinguishes current
+> implementation behavior from illustrative sample output. The previously
+> published Medium edition may not contain these corrections.
 
 ---
 
 Malware reverse engineering is one of the most skill-intensive jobs in security. You sit with IDA Pro or Ghidra, stare at hundreds of unnamed functions full of obfuscated assembly, and try to build a mental model of what a threat actor's code is actually doing. It takes years to get fast at it.
 
-I wanted to change that. So I built **AIDebug** — an open-source malware debugger that uses Claude AI to analyze every function it encounters, explain what it does in plain English, assign a risk level, and map it to a MITRE ATT&CK technique. In real time. And it now ships with FLIRT signature matching, automatic malware pattern detection, per-function control flow graphs, and live network traffic capture.
+I wanted to reduce that first-pass workload. So I built **AIDebug** — an open-source triage tool that discovers a bounded set of function candidates, applies deterministic pattern and library-identification heuristics, and can optionally ask Claude for explanations, risk hypotheses, and MITRE ATT&CK candidates. The analyst still decides what is correct.
 
 This article walks you through what the tool does, how it works architecturally, and how to run it yourself on a real malware sample.
 
@@ -19,7 +23,7 @@ This article walks you through what the tool does, how it works architecturally,
 3. [Architecture Deep Dive](#architecture-deep-dive)
    - [Layer 1: Static Analysis](#layer-1-static-analysis)
    - [Layer 2: Disassembler + Enrichment Pipeline](#layer-2-disassembler--enrichment-pipeline)
-   - [Layer 3: FLIRT Signature Matching](#layer-3-flirt-signature-matching)
+   - [Layer 3: Heuristic Library Identification](#layer-3-heuristic-library-identification)
    - [Layer 4: Malware Pattern Detection](#layer-4-malware-pattern-detection)
    - [Layer 5: Control Flow Graph](#layer-5-control-flow-graph)
    - [Layer 6: AI Analysis](#layer-6-ai-analysis)
@@ -27,12 +31,12 @@ This article walks you through what the tool does, how it works architecturally,
    - [Layer 8: Persistence (SQLite)](#layer-8-persistence-sqlite)
 4. [Running It On a Real Sample](#running-it-on-a-real-sample)
 5. [Installation](#installation)
-6. [The TUI: Four Panels That Tell the Full Story](#the-tui-four-panels-that-tell-the-full-story)
+6. [The TUI: Three Analysis Tabs](#the-tui-three-analysis-tabs)
 7. [Ask the AI Follow-Up Questions](#ask-the-ai-follow-up-questions)
 8. [Dynamic Mode: What Happens at Runtime](#dynamic-mode-what-happens-at-runtime)
 9. [Reporting and Export](#reporting-and-export)
 10. [Architecture Summary](#architecture-summary)
-11. [Why Claude?](#why-claude)
+11. [Why Is Remote AI Optional?](#why-is-remote-ai-optional)
 12. [Conclusion](#conclusion)
 
 ---
@@ -50,28 +54,30 @@ The bottleneck is not intelligence, it's throughput. An experienced analyst can 
 
 There are also a dozen sub-tasks that eat time before you even get to the interesting code: separating compiler-generated CRT functions from hand-written malware code, identifying which functions are trivial wrappers, spotting XOR decryption loops before you waste 20 minutes trying to reverse them as normal code.
 
-AI doesn't replace the analyst — but it can act as an extremely fast co-pilot that reads assembly, pre-classifies behavioral patterns, draws the control flow, and gives you its interpretation in seconds, while you decide where to look next.
+AI does not replace the analyst. AIDebug's deterministic layers classify pattern
+candidates and construct control flow; the optional model can add an
+interpretation while the analyst decides what the evidence actually supports.
 
 ---
 
 ## What AIDebug Does
 
-AIDebug is a Python tool that runs a full pipeline on any PE or ELF binary:
+AIDebug is a Python tool that runs a bounded pipeline on supported PE and ELF inputs:
 
-1. **Static analysis** — PE/ELF parsing, section entropy, imports, strings
+1. **Static analysis** — PE/ELF parsing, section entropy and strings, PE import/export tables, and bounded ELF dynamic/function symbols
 2. **Recursive-descent function discovery** — from entry point, following CALL targets
-3. **FLIRT signature matching** — library functions identified and excluded from AI analysis
+3. **Heuristic library identification** — exact import thunks can be excluded; collision-prone signature hints remain reviewable
 4. **Malware pattern scanning** — 8 behavioral patterns detected before AI runs
 5. **CFG construction** — basic block decomposition per function
 6. **Claude AI analysis** — disassembly + patterns + context sent to Claude for structured explanation
-7. **Frida dynamic instrumentation** — optional runtime hooks, memory diffs, unpacking detection, network capture
+7. **Frida dynamic instrumentation** — optional function/API hooks, register and stack snapshots, protection-transition hints, and bounded network-event capture
 
-The UI is a Textual TUI with three panels. The right panel has four tabs:
+The UI is a Textual TUI with three main panels. The right panel has three tabs:
 
 ```
 ┌──────────────────┬────────────────────────────────┬────────────────────────────┐
 │ FUNCTIONS (25)   │ DISASSEMBLY                    │ [AI Analysis][CFG]         │
-│──────────────────│────────────────────────────────│ [Patterns  ][Network]      │
+│──────────────────│────────────────────────────────│ [Patterns]                 │
 │ [CRIT] 0x40bcb8  │ 0x0040bcb8: push ebp           │────────────────────────────│
 │ [HIGH] 0x4079b6  │ 0x0040bcb9: mov  ebp,esp       │ ▶ allocate_shellcode_mem   │
 │ [MED ] 0x4015c2  │ 0x0040bcbb: sub  esp,0x20      │                            │
@@ -87,6 +93,10 @@ The UI is a Textual TUI with three panels. The right panel has four tabs:
 └──────────────────┴────────────────────────────────┴────────────────────────────┘
   Ask AI: Why does it use Nt* instead of VirtualAlloc?
 ```
+
+This UI sketch is illustrative. Its names, risk, ATT&CK mapping, and EDR-bypass
+language are hypothetical model output, not findings established by the shown
+instructions.
 
 ---
 
@@ -106,13 +116,22 @@ print(info.entry_point)  # 0x401780
 print(info.imports)      # [ImportInfo(dll='KERNEL32.dll', functions=[...])]
 ```
 
-For PE files it uses `pefile` to extract architecture, image base, section names and entropy (> 7.0 flags packing), import table, export table, and both ASCII and UTF-16LE strings with virtual address mapping.
+For PE files it uses `pefile` to extract architecture, image base, section names
+and entropy, bounded import/export records, and both ASCII and UTF-16LE strings
+with virtual-address mapping. Entropy above 7.0 is shown only as a possible
+packing/encryption lead.
 
-For ELF files it uses `pyelftools` with full symbol table support — including RISC-V, useful for IoT malware like Mirai variants.
+For ELF files it uses `pyelftools` to read bounded undefined dynamic symbols and
+available function-symbol candidates, and supports Capstone selection paths
+including RISC-V. It does not resolve each undefined symbol to a specific shared
+object. Stripped binaries and architecture-specific edge cases can reduce
+coverage.
 
 ### Layer 2: Disassembler + Enrichment Pipeline
 
-The `Disassembler` uses Capstone for recursive-descent function discovery. After finding all reachable functions, it runs an enrichment pass:
+The `Disassembler` uses Capstone for bounded recursive-descent function
+discovery. After collecting the reachable candidates found within those limits,
+it runs an enrichment pass:
 
 ```python
 def _run_enrichment(self, addresses):
@@ -128,40 +147,40 @@ def _run_enrichment(self, addresses):
             func.is_library  = match.skip_ai
 ```
 
-Every function gets pattern detection and FLIRT matching before a single AI call is made. This front-loading means the AI prompt arrives pre-enriched — Claude sees what patterns were already found and can focus on deeper interpretation.
+Each discovered function gets pattern detection and library-identification hints before a remote AI call is made. Discovery is bounded recursive descent from entry/export candidates, so indirect, unreachable, packed, or overlaid code can be missed.
 
-### Layer 3: FLIRT Signature Matching
+### Layer 3: Heuristic Library Identification
 
 One of the biggest noise sources in PE analysis is compiler-inserted CRT code. Functions like `_memset`, `_strlen`, `_malloc`, and the whole C runtime startup chain appear in virtually every MSVC-compiled binary. Sending them all to Claude wastes tokens and clutters results.
 
-AIDebug solves this with a lightweight FLIRT-style matching system:
+AIDebug uses a lightweight, FLIRT-inspired heuristic system. It is not an authoritative FLIRT database:
 
 **Strategy 1 — Import wrapper detection:** A function that's just `jmp [IAT_entry]` is named after the imported API it wraps. This covers the vast majority of API call stubs in PE files.
 
-**Strategy 2 — CRC16 prologue match:** The first 32 instruction bytes are hashed (with call target addresses zeroed out to make the hash position-independent) and looked up in `data/flirt_sigs.json`.
+**Strategy 2 — CRC16 prologue match:** The first 32 instruction bytes are hashed (with immediate values normalized where possible) and looked up in `analysis/data/flirt_sigs.json`.
 
-**Strategy 3 — Single-import call inference:** A function that calls exactly one imported API and immediately returns is named after that API.
+**Strategy 3 — Single-import call inference:** A small function that calls one known import receives an inferred wrapper hint, but is not suppressed from review.
 
-**Strategy 4 — Trivial stub detection:** Functions with 3 or fewer instructions are marked as library stubs.
+**Strategy 4 — Trivial stub detection:** Very small functions receive an inferred stub hint, but are not assumed benign.
 
-Result: the function list distinguishes clearly between library noise and actual malware logic:
+Result: the function list can prioritize likely wrapper noise. Only a verified import thunk is treated as exact enough to skip remote analysis; the 16-bit checksum can collide and needs manual verification:
 
 ```
-[LIB ] 0x40541c   _memset          (3 insns)    ← skipped by AI
-[LIB ] 0x405674   _strlen          (8 insns)    ← skipped by AI
-[CRIT] 0x40bcb8   allocate_rwx_region (31 insns) ← analyzed by AI
-[HIGH] 0x4079b6   check_os_registry   (40 insns) ← analyzed by AI
+[LIB ] 0x40541c   imported_api     (2 insns)    ← verified IAT thunk; remote call skipped
+[HINT] 0x405674   possible_strlen  (8 insns)    ← heuristic; still reviewed
+[CRIT] 0x40bcb8   allocate_rwx_region (31 insns) ← selected for analysis
+[HIGH] 0x4079b6   check_os_registry   (40 insns) ← selected for analysis
 ```
 
 ### Layer 4: Malware Pattern Detection
 
-`PatternDetector` scans every function's instruction list for 8 behavioral patterns before AI analysis runs. Detected patterns are:
+`PatternDetector` scans each discovered function's bounded instruction list for 8 behavioral patterns before optional AI analysis runs. Detected patterns are:
 
-- **`xor_decryption_loop`** (HIGH): backward jump + XOR on a memory operand — the classic string/config decryption pattern
+- **`xor_decryption_loop`** (HIGH): backward jump plus a non-zeroing XOR in the loop — a broad obfuscation/decryption heuristic that needs operand review
 - **`stack_string`** (MEDIUM): 4+ consecutive `mov byte ptr [esp+N]` — anti-string-scan technique
 - **`api_hash_resolution`** (HIGH): ROR/ROL + XOR loop — shellcode loader technique for resolving API names by hash
 - **`rdtsc_timing_check`** (MEDIUM/HIGH): RDTSC instruction — sandbox/VM timing evasion
-- **`direct_syscall`** (HIGH): SYSCALL / SYSENTER / INT 2E — EDR bypass via direct kernel entry
+- **`direct_syscall`** (contextual): Windows candidates are HIGH, Linux syscalls are INFO, and unknown-OS cases are MEDIUM
 - **`nop_sled`** (INFO): 5+ consecutive NOPs — shellcode alignment
 - **`null_preserving_xor`** (HIGH): test/jz/xor sequence — common in XOR-encoded shellcode to avoid null bytes
 - **`base64_alphabet_reference`** (MEDIUM): reference to a known Base64 alphabet string
@@ -177,7 +196,7 @@ Two renderers:
 - **`CFGTextRenderer`** — renders to multi-line ASCII art with box-drawing characters for the TUI
 - **`CFGSVGRenderer`** — renders to a self-contained inline SVG for HTML reports, using a BFS layout algorithm
 
-A real function from `malware1.exe` (`0x4015c2`, 26 instructions, `stack_string` pattern):
+An illustrative captured function from `malware1.exe` (`0x4015c2`, 26 instructions, `stack_string` pattern):
 
 ```
 CFG: 6 basic blocks
@@ -199,7 +218,7 @@ The CFG shows immediately what the branching structure looks like without readin
 
 ### Layer 6: AI Analysis
 
-This is the core of the tool. For each non-library function, we build a structured prompt that includes binary metadata, the full import table, the disassembly, referenced strings, cross-references — and now the pre-detected patterns:
+For each selected function other than a verified import thunk, the optional remote path builds a bounded structured prompt with binary metadata, imports, disassembly, referenced strings, cross-references, and pre-detected patterns:
 
 ```
 BINARY INFO:
@@ -225,40 +244,44 @@ PRE-DETECTED PATTERNS:
   [HIGH] xor_decryption_loop: xor byte ptr [eax], cl at 0x40bcd1
 ```
 
-Claude returns structured JSON:
+The following is illustrative structured model output, not verified ground truth:
 
 ```json
 {
   "suggested_name": "allocate_rwx_region",
-  "summary": "Resolves NtAllocateVirtualMemory dynamically and allocates RWX memory. NT API used to bypass EDR hooks on VirtualAlloc.",
+  "summary": "References NtAllocateVirtualMemory. Trace the arguments and callers to determine the target process and requested protection; the API name alone does not prove injection or EDR bypass.",
   "parameters": [
     {"name": "size", "type": "ULONG_PTR", "description": "Size of region"},
     {"name": "protect", "type": "ULONG", "description": "0x40 = PAGE_EXECUTE_READWRITE"}
   ],
   "return_value": "Pointer to allocated RWX region, or NULL",
   "behaviors": [
-    "Direct NT syscall — bypasses EDR hooks on VirtualAlloc",
-    "RWX memory allocation — shellcode staging indicator"
+    "NT native memory-management API reference",
+    "Possible executable-memory allocation if the protection argument is confirmed as 0x40"
   ],
-  "mitre_technique": "T1055.001 - Process Injection: DLL Injection",
-  "risk_level": "CRITICAL",
-  "notes": "Check callers for WriteProcessMemory or CreateRemoteThread after this call."
+  "mitre_technique": null,
+  "risk_level": "MEDIUM",
+  "notes": "Confirm the complete call sequence before assigning an ATT&CK technique."
 }
 ```
 
-That note — *"Check callers for WriteProcessMemory"* — is the kind of contextual intelligence that saves an analyst 20 minutes of cross-referencing.
+That kind of note can suggest a next manual check, but it can also be wrong and
+must be confirmed against callers and runtime evidence.
 
 ### Layer 7: Dynamic Instrumentation (Frida)
 
-In dynamic mode the tool spawns the binary and loads three Frida scripts simultaneously:
+The dynamic engine provides three Frida script families. Hook availability and
+coverage depend on the target OS, architecture, modules, Frida version, ASLR/PIE
+mapping, and whether the analyst attaches before the relevant activity:
 
-**`tracer.js`** — hooks 80+ Win32 APIs and logs every call with auto-dereferenced string arguments.
+**`tracer.js`** — hooks a configured set of Win32 APIs and records bounded call arguments when those exports exist.
 
-**`unpack_detector.js`** — hooks `VirtualAlloc`, `VirtualProtect`, and `NtProtectVirtualMemory`. When a region transitions from RWX to R-X (the unpacking stub has finished writing and is handing control to the unpacked code), the script scans the region for `push ebp; mov ebp, esp` prologues to hint at the OEP:
+**`unpack_detector.js`** — observes selected allocation/protection APIs. A suspicious writable-to-executable transition can trigger a scan for an x86 prologue-shaped byte sequence. This is an analyst lead, not proof that unpacking completed or that the candidate is the original entry point:
 
 ```javascript
 // Scan for PE-like prologue in newly-executable region
-for (var i = 0; i < size - 2; i++) {
+var boundedSize = Math.min(size, 256);
+for (var i = 0; i < boundedSize - 2; i++) {
     var b0 = mem[i], b1 = mem[i+1], b2 = mem[i+2];
     if (b0 === 0x55 && b1 === 0x8B && b2 === 0xEC) {
         oepHint = ptr(baseAddr).add(i).toString();
@@ -281,26 +304,47 @@ if (family === 2) {  // AF_INET
 }
 ```
 
-The result is C2 protocol reconstruction without needing a separate network capture tool — all captured data ends up in the Network tab of the TUI and in the `network_events` database table.
+The result is bounded API-level network telemetry that may help an analyst
+correlate destinations and buffers. It is not packet capture, complete C2
+reconstruction, TLS decryption, or a replacement for a network sensor.
+Connect and send events are emitted after the API reports success; send sizes
+use the API's returned byte count. A bounded socket-to-peer map associates later
+`send` and `recv` events with a successfully connected IPv4 destination when
+that context is available. This correlation can still be absent or incomplete.
 
-The `engine.py` also captures 64-byte memory snapshots at pointer-valued registers on function entry, then reads the same regions again on exit to produce a per-function memory diff.
+The engine records function entry/exit registers and a bounded entry stack when
+hooks fire. It also correlates bounded 64-byte before/after pointer-region
+captures by invocation ID. Unreadable pointers, missed hooks, recursion limits,
+and target-specific Frida behavior can still leave a diff incomplete. Dynamic
+instrumentation uses the lower of `--max-functions` and a 50-function hook
+ceiling. Each script must report readiness; the CLI shows its current installed
+hook count and marks the run degraded when instrumentation errors are reported.
+A ready observer with zero hooks can be waiting for a watched module and is not
+evidence that behavior was captured.
 
 ### Layer 8: Persistence (SQLite)
 
-Five tables in `traces.db`:
+Six primary tables in the configured SQLite session database:
 - `sessions` — binary metadata per analysis run
 - `function_traces` — disassembly + AI analysis JSON per function
 - `api_calls` — Win32 API call log from dynamic mode
 - `detected_patterns` — malware pattern results per function
 - `network_events` — network events from dynamic mode
+- `runtime_events` — protection-transition and related runtime hints
 
-Re-running the tool on the same binary is instant — no repeat API calls for already-analyzed functions.
+The database supports later report generation and session review. A completed
+result can be reused across sessions only when the sample SHA-256, function
+address, and analyzer cache key match; model/prompt or offline-cache changes
+invalidate the match.
 
 ---
 
 ## Running It On a Real Sample
 
-Here's what happens when I run this on `malware1.exe`.
+The following is a historical, illustrative walkthrough from `malware1.exe`.
+The sample is intentionally not in the repository, and CI cannot reproduce
+these exact values. Treat every quoted model conclusion as a hypothesis, not
+validated ground truth.
 
 ### Step 1: Static fingerprint
 
@@ -309,7 +353,7 @@ Here's what happens when I run this on `malware1.exe`.
 [*] EntryPoint: 0x401780
 [*] Sections  : ['.text', '.rdata', '.data', '.reloc', 'dhqj']
 [*] Imports   : 89 functions from 8 DLLs
-[!] Possible packing: ['dhqj'] (entropy > 7.0)
+[!] Possible packing: [dhqj] (entropy > 7.0)
 ```
 
 Immediate red flags:
@@ -319,7 +363,9 @@ Immediate red flags:
 
 ### Step 2: Function discovery + enrichment
 
-25 functions found. After FLIRT matching: 3 are library functions (`_memset`, `_strlen`, a CRT stub) and are skipped. Pattern detection fires on 2 functions before AI runs:
+In this capture, 25 candidates were found and several library/pattern hints were
+shown. Current code skips remote analysis only for verified import thunks;
+checksum and structural matches remain collision-prone hints:
 
 ```
   [FLIRT] sub_00405412  → _memset (msvcrt) — skipped
@@ -330,44 +376,63 @@ Immediate red flags:
 
 I already know where to look before Claude runs a single analysis.
 
-### Step 3: Key findings from AI analysis
+### Step 3: Historical AI hypotheses to validate
 
-**`0x40bcb8` — `allocate_shellcode_region` [CRITICAL]**
-> Calls NtAllocateVirtualMemory directly (bypassing EDR hooks on VirtualAlloc) to allocate RWX memory. The 0x40 protection constant is PAGE_EXECUTE_READWRITE.
-> MITRE: T1055.001
+**`0x40bcb8` — possible native memory-management wrapper**
+> The visible API reference suggests memory allocation. Confirm the argument
+> order, protection value, target process, and callers before claiming RWX
+> allocation, injection, or defense evasion.
 
-**`0x4079b6` — `check_os_and_open_registry` [HIGH]**
-> Queries Windows version ("Windows 11" check) and opens a registry key via NtOpenKey. The FallbackGUID string suggests persistence — writing a GUID-keyed run key.
-> MITRE: T1547.001 — Registry Run Keys
+**`0x4079b6` — possible OS/registry query**
+> Registry access can support many benign or malicious workflows. Opening a key
+> and seeing a GUID-like string does not establish persistence without the
+> target path, write operation, and surrounding control flow.
 
-**`0x4015c2` — `build_stack_string` [MEDIUM]**
-> Constructs a string on the stack byte-by-byte (`stack_string` pattern confirmed by pre-analysis). This technique evades static string scanners. The constructed value is likely a registry path, URL, or filename.
-> MITRE: T1140 — Deobfuscate/Decode Files or Information
+**`0x4015c2` — stack-string candidate**
+> Consecutive byte writes support a stack-string hypothesis. Recover the final
+> bytes and their use before deciding whether this is obfuscation or mapping it
+> to ATT&CK.
 
-**`0x401000` — `xor_decode_config` [HIGH]**
-> XOR decryption loop with a hardcoded key. Likely decoding an embedded C2 address or configuration blob.
+**`0x401000` — XOR-loop candidate**
+> A backward branch around non-zeroing XOR is a broad heuristic. Inspect the
+> operands, buffer, loop bounds, and output use before calling it configuration
+> or C2 decoding.
 
-Within minutes — without writing a single IDA script — we have a threat profile: RWX allocation via NT syscalls, registry persistence, stack-string obfuscation, and an XOR-encoded C2 config.
+This produces a prioritized hypothesis: possible executable-memory allocation,
+registry behavior, stack-string construction, and XOR-obfuscated data. Each item
+still needs confirmation in a disassembler, sandbox, or debugger.
 
 ---
 
 ## Installation
 
-The project is now published on PyPI, so the fastest install path is:
+The public v1.1.0 package is on PyPI, but the corrected offline/dependency and
+safety workflow in this repository is newer than that release. Until a new
+version is tagged, install the current code from a source checkout:
 
 ```bash
-pip install 1200km-aidebug
+git clone https://github.com/anpa1200/AIDebug.git
+cd AIDebug
+pip install -e .
 aidebug --help
 ```
 
 PyPI package: **https://pypi.org/project/1200km-aidebug/**
 
-Current release: **https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0**
+Current public release: **https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0**
 
-Optional Frida dynamic instrumentation:
+Deterministic offline analysis needs only the base package:
 
 ```bash
-pip install "1200km-aidebug[dynamic]"
+aidebug --binary /path/to/sample --offline --no-tui
+```
+
+Install authorized remote AI or dynamic instrumentation separately:
+
+```bash
+pip install -e ".[ai]"       # remote AI + local validation of AI YARA candidates
+pip install -e ".[dynamic]"  # Frida 17.x
+pip install -e ".[all]"      # both
 ```
 
 If you prefer running from source:
@@ -375,45 +440,50 @@ If you prefer running from source:
 ```bash
 git clone https://github.com/anpa1200/AIDebug
 cd AIDebug
-pip install -e ".[dynamic]"
+pip install -e ".[all]"
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### Run in TUI mode
 
 ```bash
-aidebug --binary /path/to/sample.exe
+aidebug --binary /path/to/sample.exe --offline
 ```
 
 ### Run in CLI mode (headless, good for scripting)
 
 ```bash
-aidebug --binary sample.exe --no-tui
+aidebug --binary sample.exe --offline --no-tui
 ```
 
 ### Generate HTML report in one shot
 
 ```bash
-aidebug --binary sample.exe --no-tui --report
+aidebug --binary sample.exe --offline --no-tui --report
 ```
 
 ### Dynamic mode (requires Frida)
 
 ```bash
-# Linux with Wine
-aidebug --binary sample.exe --mode dynamic
-
-# Attach to running process
-aidebug --binary sample.exe --mode dynamic --pid 4521
+# Start the sample separately inside the authorized isolated target, then attach.
+# AIDebug does not launch or configure Wine/sandbox isolation for you.
+aidebug --binary sample.exe --mode dynamic --pid 4521 --offline
 ```
+
+Running bulk CLI, report-backed, or dynamic analysis with remote AI requires
+the `ai` extra, `ANTHROPIC_API_KEY`, and `--accept-ai-cost`. This is both a cost
+acknowledgement and a reminder that sample-derived evidence is sent off host.
 
 ---
 
-## The TUI: Four Panels That Tell the Full Story
+## The TUI: Three Analysis Tabs
 
-The right panel has four tabs that work together to give you a complete picture of any function without leaving the terminal.
+The right panel has three tabs that combine available evidence for a discovered function without claiming complete coverage.
 
-**AI Analysis tab** — Claude's structured output: suggested name, 2-3 sentence summary, parameters, return value, behaviors, MITRE technique, analyst notes.
+**AI Analysis tab** — the selected analyzer's structured output. With the `ai`
+extra and remote mode, this can include Claude-generated names, summaries,
+parameters, behaviors, risk, and ATT&CK candidates. Offline mode instead shows
+deterministic evidence and does not invent ATT&CK conclusions.
 
 **CFG tab** — The function's control flow graph as ASCII art. You see immediately whether you're looking at a simple linear function or a complex loop-with-branches before reading a single instruction.
 
@@ -444,13 +514,8 @@ CFG: 6 basic blocks
   Evidence: mov byte ptr [ebp-0x3c], 0x68
 ```
 
-**Network tab** — Live network events in dynamic mode:
-
-```
-connect  connect      192.168.1.105:4444   0 bytes
-send     send         192.168.1.105:4444   128 bytes
-recv     recv         192.168.1.105:4444   64 bytes
-```
+Dynamic network events are logged by the CLI and can be persisted into the
+session/JSON export. The current TUI does not expose a Network tab.
 
 ---
 
@@ -464,7 +529,9 @@ With a function selected, type questions at the bottom bar:
 - *"Write a YARA rule for this function's behavior"*
 - *"Is the XOR key hardcoded or derived at runtime?"*
 
-The AI has the full function context and conversation history. This is closer to having a senior analyst sitting next to you than using a static analysis tool.
+Remote follow-up uses the selected function's bounded prompt context and a
+limited conversation history. It remains model output, not a senior analyst's
+decision. Offline mode deliberately disables follow-up inference.
 
 ---
 
@@ -472,20 +539,28 @@ The AI has the full function context and conversation history. This is closer to
 
 When you run with `--mode dynamic`, three things happen in parallel as the process executes:
 
-**1. Per-function register snapshots.** Each hooked function fires `onEnter` and `onLeave` callbacks. The JS hook reads all general-purpose registers plus 128 bytes of stack at entry, and re-reads pointer-valued registers at exit to compute a memory diff. The snapshot is fed to Claude as runtime context.
+**1. Per-function runtime context.** A successfully installed hook can record
+entry/exit registers and a bounded entry stack. Static addresses may not be
+valid runtime addresses under ASLR/PIE or rebasing, so hook coverage must be
+verified. Remote mode may send captured runtime context to the provider.
 
-**2. Unpacking detection.** The detector watches VirtualProtect calls. When a region that was RWX becomes R-X, the engine knows unpacking just finished:
+**2. Protection-transition hints.** The detector watches selected protection
+calls. A suspicious writable/executable transition can produce a possible
+unpacking lead:
 
 ```
-[Unpack] RWX allocation detected @ 0x00870000  size=65536
-[Unpack] *** UNPACKING COMPLETE ***
+[Unpack] Writable allocation tracked @ 0x00870000 size=65536
+[Unpack] Executable protection transition observed (heuristic)
 [Unpack] Region : 0x00870000
-[Unpack] OEP hint: 0x00870010  new_protect=0x20
+[Unpack] Entry candidate: 0x00870010  new_protect=0x20
 ```
 
-This tells you exactly where to re-disassemble after the stub finishes.
+This gives the analyst a byte-pattern hint to investigate. The tool does not
+automatically dump, rebase, re-disassemble, or re-analyze that region.
 
-**3. Network capture.** Every connect/send/recv call is captured with the actual bytes. The Network tab fills up as the malware tries to reach its C2:
+**3. Network API telemetry.** When supported hooks fire, selected calls and
+bounded buffer bytes are recorded. Missed calls, encrypted traffic, alternate
+stacks, early activity, and unsupported exports remain possible:
 
 ```
 connect  connect   192.168.1.105:4444   0 bytes
@@ -493,7 +568,8 @@ send     send      192.168.1.105:4444   128 bytes    ← beacon
 recv     recv      192.168.1.105:4444   64 bytes     ← response
 ```
 
-All of this is saved to the database so you can review it after the session ends.
+Events delivered to the host callbacks can be saved to the local database for
+review. The database is unencrypted and needs case-specific access and retention controls.
 
 ---
 
@@ -503,22 +579,25 @@ After analysis, generate reports directly:
 
 ```bash
 # HTML report (self-contained, dark theme, CFG SVGs embedded)
-aidebug --binary sample.exe --no-tui --report
+aidebug --binary sample.exe --offline --no-tui --report
 
-# YARA rules for HIGH/CRITICAL functions
-aidebug --binary sample.exe --no-tui --yara
+# YARA candidates for HIGH/CRITICAL functions
+aidebug --binary sample.exe --offline --no-tui --yara
 
-# JSON export for SIEM/SOAR
-aidebug --binary sample.exe --no-tui --json-export
+# Versioned JSON for a custom downstream adapter
+aidebug --binary sample.exe --offline --no-tui --json-export
 
 # All three, custom output directory
-aidebug --binary sample.exe --no-tui --report --yara --json-export --out-dir ./reports/
+aidebug --binary sample.exe --offline --no-tui --report --yara --json-export --out-dir ./reports/
 ```
 
-The HTML report includes an interactive sidebar with all functions sorted by risk, and each function's detail page shows:
-- AI summary, MITRE tag, behaviors, parameters
+The HTML report includes an interactive sidebar with the functions analyzed in
+that bounded session sorted by risk. Each function detail view shows:
+
+- the available deterministic or remote-AI summary, risk, behaviors, and
+  optional ATT&CK candidate
 - **Detected patterns section** with severity-coded entries
-- **Inline CFG SVG** — the full control flow graph embedded directly in the page
+- available function evidence and stored pattern findings
 - Color-coded disassembly
 
 ---
@@ -539,8 +618,8 @@ malware.exe
 │  Disassembler (Capstone)                                   │
 │  → Function objects: instructions, calls_to, strings_ref   │
 │                                                            │
-│  Enrichment pipeline (runs on all functions):              │
-│  ├── FlirtMatcher  → is_library, flirt_match               │
+│  Enrichment pipeline (bounded discovered functions):       │
+│  ├── FlirtMatcher  → exact thunk or heuristic hints         │
 │  └── PatternDetector → patterns []                         │
 └────────────────────┬───────────────────────────────────────┘
                      │
@@ -550,8 +629,8 @@ malware.exe
           │             ┌─────────────────────────────┐
           │             │  DebugEngine (Frida)         │
           │             │  tracer.js      → API calls  │
-          │             │  unpack_detector.js → OEP    │
-          │             │  network_tracer.js  → C2 I/O │
+          │             │  unpack_detector.js → transition hint│
+          │             │  network_tracer.js  → bounded events │
           │             │  hook_function  → snapshots  │
           │             └─────────────┬───────────────┘
           │                           │
@@ -562,18 +641,18 @@ malware.exe
                      │
                      ▼
 ┌────────────────────────────────────────────────────────────┐
-│  AIAnalyzer (Claude claude-opus-4-6)                       │
+│  AIAnalyzer (Claude claude-opus-4-8, configurable)         │
 │  Input: disassembly + imports + strings + patterns         │
 │       + xrefs + snapshot (if dynamic)                      │
 │  Output: name, summary, risk, MITRE, params, notes         │
-│  Library functions (FLIRT match) → skipped                 │
+│  Verified import thunks → remote analysis skipped          │
 └────────────────────┬───────────────────────────────────────┘
                      │
                      ▼
 ┌────────────────────────────────────────────────────────────┐
 │  TraceStore (SQLite)                                       │
 │  sessions │ function_traces │ api_calls                    │
-│  network_events │ detected_patterns                        │
+│  network_events │ runtime_events │ detected_patterns        │
 └────────────────────┬───────────────────────────────────────┘
                      │
                      ▼
@@ -581,7 +660,7 @@ malware.exe
 │  Textual TUI                                               │
 │  ┌──────────┐  ┌──────────────┐  ┌──────────────────────┐ │
 │  │ Function │  │ Disassembly  │  │ [AI Analysis][CFG  ] │ │
-│  │   List   │  │   + Regs     │  │ [Patterns  ][Network]│ │
+│  │   List   │  │   + Regs     │  │ [Patterns]           │ │
 │  └──────────┘  └──────────────┘  └──────────────────────┘ │
 │                                     + Chat bar             │
 └────────────────────┬───────────────────────────────────────┘
@@ -590,43 +669,56 @@ malware.exe
 ┌────────────────────────────────────────────────────────────┐
 │  Reporting                                                 │
 │  html_report.py   → .html (CFG SVG + patterns embedded)    │
-│  yara_generator.py → .yar (AI-generated rules)             │
-│  json_export.py   → .json (SIEM/SOAR schema v1)            │
+│  yara_generator.py → .yar (reviewable candidate rules)     │
+│  json_export.py   → .json (AIDebug session schema v2)      │
 └────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Why Claude?
+## Why Is Remote AI Optional?
 
-I tried several models for the structured JSON output. Claude was the only one that consistently:
+The remote path uses Anthropic's structured message API because it supports the
+JSON-oriented prompt and bounded follow-up workflow used by the project. This
+repository does not contain a controlled multi-model benchmark, so it does not
+claim that one provider is uniquely accurate or that generated ATT&CK mappings
+are correct. The model is configurable and can change independently of the
+public package version.
 
-1. Returns valid JSON without markdown fences leaking through
-2. Correctly identifies subtle evasion techniques (NT API usage, timing checks)
-3. Writes accurate MITRE ATT&CK technique mappings
-4. Provides genuinely useful analyst notes, not just restating the disassembly
-5. Handles follow-up questions with full context awareness
-6. Integrates pre-detected pattern context into its analysis rather than ignoring it
-
-The `claude-opus-4-6` model has strong assembly comprehension. It correctly identifies x86 calling conventions, recognizes common compiler idioms, and understands the difference between a compiler-generated prologue and a hand-written shellcode stub. When you inject pattern context — "this function has a XOR decryption loop at 0x4015ed" — it builds on that rather than re-deriving it from scratch.
+Remote processing also has a material data boundary: filename and hash context,
+imports, disassembly, referenced strings, cross-references, pattern hints, and
+optional runtime context may leave the lab. Install the `ai` extra and use this
+mode only after reviewing provider policy, authorization, retention, and cost.
+The base package's `--offline` mode keeps analysis local and makes its inference
+limits explicit.
 
 ---
 
 ## Conclusion
 
-AIDebug is not a replacement for IDA Pro or a seasoned reverse engineer. It's a force multiplier. FLIRT matching removes the library noise. Pattern detection front-loads the behavioral classification. The CFG makes the structure visible at a glance. And Claude's contextual analysis fills in the meaning — what the function does, why it matters, and where to look next.
+AIDebug is not a replacement for IDA Pro or a seasoned reverse engineer. Its
+bounded discovery, heuristic library hints, pattern candidates, CFG view, and
+optional model explanations can help prioritize where to look next. None of
+those layers establishes benignness, attribution, or a production detection by
+itself.
 
-The combination gets you from "unknown packed PE" to a prioritized threat profile in minutes rather than hours.
+The intended outcome is a faster, structured first pass whose findings can be
+verified with full reverse-engineering and sandbox tools.
 
 The full source is at **https://github.com/anpa1200/AIDebug**.
 
-Install from PyPI:
+Install the corrected current source checkout as shown above:
 
 ```bash
-pip install 1200km-aidebug
+pip install -e .
+# or: pip install -e ".[ai]" for authorized remote analysis
 ```
 
-Release page: **https://github.com/anpa1200/AIDebug/releases/tag/v1.0.0**
+The PyPI command `pip install 1200km-aidebug` currently installs historical
+v1.1.0, not the post-v1.1.0 source behavior described in this repository
+edition.
+
+Release page: **https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0**
 
 If you're working in threat intelligence, incident response, or malware research — try it on your next sample and let me know what you find.
 

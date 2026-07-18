@@ -1,20 +1,20 @@
 Source: aidebug
 Section: utils
-Priority: optional
 Maintainer: Andrey Pautov <1200km@gmail.com>
 Build-Depends:
  debhelper-compat (= 13),
  dh-python,
  pybuild-plugin-pyproject,
  python3-all,
- python3-capstone,
- python3-pefile,
- python3-pyelftools,
+ python3-capstone (>= 5),
+ python3-packaging (>= 24),
+ python3-pefile (>= 2023.2.7),
+ python3-pyelftools (>= 0.31),
  python3-pytest,
- python3-rich,
+ python3-rich (>= 13),
  python3-setuptools,
- python3-textual
-Standards-Version: 4.7.0
+ python3-textual (>= 0.52)
+Standards-Version: 4.7.4
 Homepage: https://github.com/anpa1200/AIDebug
 Vcs-Browser: https://github.com/anpa1200/AIDebug
 Vcs-Git: https://github.com/anpa1200/AIDebug.git
@@ -25,17 +25,17 @@ Architecture: all
 Depends:
  ${misc:Depends},
  ${python3:Depends},
- python3-capstone,
- python3-pefile,
- python3-pyelftools,
- python3-rich,
- python3-textual
-Description: AI-assisted malware reverse-engineering debugger
+ python3-capstone (>= 5),
+ python3-pefile (>= 2023.2.7),
+ python3-pyelftools (>= 0.31),
+ python3-rich (>= 13),
+ python3-textual (>= 0.52)
+Description: malware reverse-engineering triage CLI and TUI
  AIDebug performs malware triage and reverse-engineering support for PE and
- ELF binaries. It extracts function-level behavior, maps suspicious logic to
- MITRE ATT&CK, and emits detection-oriented outputs such as YARA candidates,
- IOC lists, JSON exports, and HTML analyst reports.
+ ELF binaries. It extracts function-level behavior and emits analyst-review
+ outputs such as YARA candidates, heuristic IOC strings inside JSON exports,
+ and HTML reports. Optional remote analysis can suggest MITRE ATT&CK mappings.
  .
- Static analysis can run without executing samples. Optional Anthropic-backed
- analysis and Frida-based dynamic tracing depend on Python modules that may
- need separate Kali/Debian packaging.
+ Offline static analysis reads samples without executing them and does not need
+ an API key. Anthropic-backed analysis and Frida dynamic tracing are optional
+ Debian packaging gaps and are not provided by this binary package.

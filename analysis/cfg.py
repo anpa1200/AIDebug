@@ -7,14 +7,17 @@ then renders it either as:
   - Inline SVG  (for HTML reports, no external dependency)
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Optional
+
 from .disassembler import Function, Instruction
 
 BRANCH_MNEMONICS = {
     'je', 'jne', 'jz', 'jnz', 'jg', 'jge', 'jl', 'jle',
     'ja', 'jae', 'jb', 'jbe', 'js', 'jns', 'jo', 'jno',
-    'jp', 'jnp', 'jcxz', 'jecxz', 'jrcxz',
+    'jp', 'jnp', 'jcxz', 'jecxz', 'jrcxz', 'loop', 'loope', 'loopne',
+    'beq', 'bne', 'bgt', 'bge', 'blt', 'ble', 'bhi', 'bhs', 'blo', 'bls',
+    'cbz', 'cbnz', 'tbz', 'tbnz',
 }
 UNCOND_JMP = {'jmp', 'jmpq', 'b'}
 RET_MNEMONICS = {'ret', 'retn', 'retf', 'retq', 'hlt', 'ud2'}
@@ -51,7 +54,7 @@ class CFG:
     blocks: dict = field(default_factory=dict)   # start_addr -> BasicBlock
 
     @property
-    def entry(self) -> Optional[BasicBlock]:
+    def entry(self) -> BasicBlock | None:
         return self.blocks.get(self.function_address)
 
     @property
@@ -79,11 +82,11 @@ class CFGBuilder:
             mnem = insn.mnemonic.lower()
             is_branch = mnem in BRANCH_MNEMONICS
             is_jmp    = mnem in UNCOND_JMP
-            is_ret    = mnem in RET_MNEMONICS
+            is_ret    = self._is_return(insn)
 
             if is_branch or is_jmp:
                 # target is a leader
-                target = self._parse_imm(insn.op_str)
+                target = self._parse_target(mnem, insn.op_str)
                 if target:
                     leaders.add(target)
                 # instruction after branch is a leader (fallthrough)
@@ -94,10 +97,7 @@ class CFGBuilder:
                 if i + 1 < len(insns):
                     leaders.add(insns[i + 1].address)
 
-        leaders_sorted = sorted(leaders)
-
         # --- Pass 2: split instructions into blocks ---
-        leader_index = {addr: idx for idx, addr in enumerate(leaders_sorted)}
         current_block = None
 
         for insn in insns:
@@ -114,12 +114,12 @@ class CFGBuilder:
             last = block.instructions[-1]
             mnem = last.mnemonic.lower()
 
-            if mnem in RET_MNEMONICS:
+            if self._is_return(last):
                 block.block_type = 'ret'
 
             elif mnem in UNCOND_JMP:
                 block.block_type = 'branch'
-                target = self._parse_imm(last.op_str)
+                target = self._parse_target(mnem, last.op_str)
                 if target and target in cfg.blocks:
                     block.successors.append(target)
                     cfg.blocks[target].predecessors.append(block.start)
@@ -127,7 +127,7 @@ class CFGBuilder:
             elif mnem in BRANCH_MNEMONICS:
                 block.block_type = 'branch'
                 # taken branch
-                target = self._parse_imm(last.op_str)
+                target = self._parse_target(mnem, last.op_str)
                 if target and target in cfg.blocks:
                     block.successors.append(target)
                     cfg.blocks[target].predecessors.append(block.start)
@@ -146,8 +146,9 @@ class CFGBuilder:
 
         return cfg
 
-    def _parse_imm(self, op_str: str) -> Optional[int]:
+    def _parse_imm(self, op_str: str) -> int | None:
         op = op_str.strip().split(',')[0].strip().replace('[', '').replace(']', '')
+        op = op.lstrip('#$')
         if '+' in op or '-' in op:
             return None
         try:
@@ -155,7 +156,22 @@ class CFGBuilder:
         except ValueError:
             return None
 
-    def _fallthrough(self, block: BasicBlock, all_insns: list) -> Optional[int]:
+    def _parse_target(self, mnemonic: str, op_str: str) -> int | None:
+        if mnemonic in {'cbz', 'cbnz', 'tbz', 'tbnz'}:
+            return self._parse_imm(op_str.rsplit(',', 1)[-1])
+        return self._parse_imm(op_str)
+
+    def _is_return(self, insn: Instruction) -> bool:
+        mnem = insn.mnemonic.lower()
+        operands = insn.op_str.lower().replace(' ', '')
+        return (
+            mnem in RET_MNEMONICS
+            or (mnem == 'bx' and operands == 'lr')
+            or (mnem == 'br' and operands in {'x30', 'lr'})
+            or (mnem == 'pop' and 'pc' in operands.strip('{}').split(','))
+        )
+
+    def _fallthrough(self, block: BasicBlock, all_insns: list) -> int | None:
         """Return the address of the instruction immediately after this block."""
         last_addr = block.instructions[-1].address
         for i, insn in enumerate(all_insns):
@@ -248,7 +264,6 @@ class CFGSVGRenderer:
 
         for layer_idx in sorted(layers):
             blks = layers[layer_idx]
-            layer_w = len(blks) * (self.BLOCK_W + self.W_GAP) - self.W_GAP
             x_start = 20
             y = layer_idx * (200 + self.H_GAP) + 20
 
@@ -371,10 +386,14 @@ class CFGSVGRenderer:
 
     def _mnem_color(self, mnem: str) -> str:
         m = mnem.lower()
-        if m in ('call', 'callq'):  return '#f8c95a'
-        if m in RET_MNEMONICS:      return '#56d364'
-        if m in BRANCH_MNEMONICS or m in UNCOND_JMP: return '#bc8cff'
-        if m in ('push', 'pop'):    return '#79c0ff'
+        if m in ('call', 'callq'):
+            return '#f8c95a'
+        if m in RET_MNEMONICS:
+            return '#56d364'
+        if m in BRANCH_MNEMONICS or m in UNCOND_JMP:
+            return '#bc8cff'
+        if m in ('push', 'pop'):
+            return '#79c0ff'
         return '#c9d1d9'
 
     def _esc(self, s: str) -> str:

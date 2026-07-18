@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -12,19 +11,26 @@ class MemoryDiff:
     @property
     def changed_bytes(self) -> list:
         """Returns list of (offset, old_byte, new_byte) for every changed byte."""
-        return [
-            (i, b, a)
-            for i, (b, a) in enumerate(zip(self.data_before, self.data_after))
-            if b != a
-        ]
+        changes = []
+        for index in range(max(len(self.data_before), len(self.data_after))):
+            before = self.data_before[index] if index < len(self.data_before) else None
+            after = self.data_after[index] if index < len(self.data_after) else None
+            if before != after:
+                changes.append((index, before, after))
+        return changes
 
     @property
     def diff_summary(self) -> str:
         changes = self.changed_bytes
         if not changes:
             return 'no changes'
-        parts = [f'+{hex(self.address + off)}: {hex(old)}→{hex(new)}'
-                 for off, old, new in changes[:8]]
+        def byte_text(value):
+            return hex(value) if value is not None else '--'
+
+        parts = [
+            f'+{hex(self.address + off)}: {byte_text(old)}→{byte_text(new)}'
+            for off, old, new in changes[:8]
+        ]
         suffix = f' (+{len(changes) - 8} more)' if len(changes) > 8 else ''
         return ', '.join(parts) + suffix
 

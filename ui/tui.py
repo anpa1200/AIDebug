@@ -5,32 +5,48 @@ Bottom bar: chat input for follow-up questions to the AI.
 """
 from __future__ import annotations
 
-import asyncio
 import threading
-from dataclasses import dataclass
-from typing import Optional
 
+from rich.markup import escape
 from rich.text import Text
-from rich.table import Table
-from rich.panel import Panel
-from rich.columns import Columns
-
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import (
-    DataTable, Footer, Header, Input, Label,
-    RichLog, Static, LoadingIndicator, TabbedContent, TabPane,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    LoadingIndicator,
+    RichLog,
+    Static,
+    TabbedContent,
+    TabPane,
 )
-from textual import work
-
-from analysis.cfg import CFGBuilder, CFGTextRenderer
-from analysis.pattern_detector import PatternDetector
 
 import config
+from analysis.cfg import CFGBuilder, CFGTextRenderer
 
+
+def _display_text(value, limit: int = 8_000) -> str:
+    """Keep newlines readable while neutralizing terminal control sequences."""
+    rendered = []
+    for character in str(value)[:limit]:
+        if character in "\n\t" or character.isprintable():
+            rendered.append(character)
+        elif ord(character) <= 0xFF:
+            rendered.append(f"\\x{ord(character):02x}")
+        else:
+            rendered.append(f"\\u{ord(character):04x}")
+    return "".join(rendered)
+
+
+def _markup_text(value, limit: int = 8_000) -> str:
+    return escape(_display_text(value, limit))
 
 # ---------------------------------------------------------------------------
 # Custom messages (worker → UI thread)
@@ -43,9 +59,18 @@ class AnalysisReady(Message):
         super().__init__()
 
 
+class AnalysisFailed(Message):
+    def __init__(self, address: int, error: str) -> None:
+        self.address = address
+        self.error = error
+        super().__init__()
+
+
 class FollowupReady(Message):
-    def __init__(self, text: str) -> None:
+    def __init__(self, address: int, text: str, *, failed: bool = False) -> None:
+        self.address = address
         self.text = text
+        self.failed = failed
         super().__init__()
 
 
@@ -185,14 +210,13 @@ Screen {
 
     BINDINGS = [
         Binding("q",        "quit",         "Quit",           show=True),
-        Binding("a",        "analyze_all",  "Analyze All",    show=True),
-        Binding("r",        "reset_session","Reset DB",       show=False),
-        Binding("ctrl+f",   "focus_search", "Search",         show=True),
+        Binding("ctrl+a",   "analyze_all",  "Analyze All",    show=True),
+        Binding("ctrl+f",   "focus_chat",   "Follow-up",       show=True),
         Binding("escape",   "blur_chat",    "Unfocus Chat",   show=False),
     ]
 
     # Reactive state
-    _current_address: reactive[Optional[int]] = reactive(None)
+    _current_address: reactive[int | None] = reactive(None)
     _status: reactive[str] = reactive("")
 
     # ------------------------------------------------------------------
@@ -200,7 +224,9 @@ Screen {
     # ------------------------------------------------------------------
 
     def __init__(self, binary_info, disassembler, ai_analyzer, trace_store,
-                 session_id: int, function_addresses: list):
+                 session_id: int, function_addresses: list, *,
+                 allow_bulk_analysis: bool = False,
+                 max_bulk_functions: int = 25):
         super().__init__()
         self.binary_info        = binary_info
         self.disassembler       = disassembler
@@ -210,6 +236,11 @@ Screen {
         self.function_addresses = function_addresses
         self._analyses: dict    = {}   # address -> AIAnalysis
         self._analyzing: set    = set()
+        self._ai_lock = threading.RLock()
+        self._followup_running = False
+        self._allow_bulk_analysis = allow_bulk_analysis
+        self._max_bulk_functions = max(1, max_bulk_functions)
+        self._startup_warnings: list[str] = []
 
     # ------------------------------------------------------------------
     # Layout
@@ -220,9 +251,14 @@ Screen {
         yield Header(show_clock=True)
 
         # Top toolbar with binary info
-        toolbar_text = (
-            f" {info.filename}  |  {info.file_format} {info.arch} {info.bits}-bit  "
-            f"|  {len(self.function_addresses)} functions  |  SHA256: {info.sha256[:12]}..."
+        analyzer_mode = getattr(self.ai_analyzer, "display_name", config.AI_MODEL)
+        if getattr(self.ai_analyzer, "remote_enabled", True):
+            analyzer_mode = f"{analyzer_mode} (selection transmits evidence)"
+        toolbar_text = Text(
+            f" {_display_text(info.filename, 240)}  |  {_display_text(info.file_format, 40)} "
+            f"{_display_text(info.arch, 40)} {info.bits}-bit  "
+            f"|  {len(self.function_addresses)} functions  |  SHA256: {info.sha256[:12]}... "
+            f"|  {_display_text(analyzer_mode, 160)}"
         )
         yield Static(toolbar_text, id="toolbar")
 
@@ -249,13 +285,21 @@ Screen {
                         yield RichLog(id="cfg-log", highlight=True, markup=True)
                     with TabPane("Patterns", id="tab-patterns"):
                         yield RichLog(id="patterns-log", highlight=True, markup=True)
-                    with TabPane("Network", id="tab-network"):
-                        yield RichLog(id="network-log", highlight=True, markup=True)
 
         # Bottom — chat bar
         with Horizontal(id="chat-bar"):
-            yield Label(" Ask AI ", id="chat-label")
-            yield Input(id="chat-input", placeholder="Type a follow-up question…")
+            remote_enabled = getattr(self.ai_analyzer, "remote_enabled", True)
+            yield Label(" Ask AI " if remote_enabled else " Offline ", id="chat-label")
+            yield Input(
+                id="chat-input",
+                placeholder=(
+                    "Type a follow-up question…"
+                    if remote_enabled
+                    else "Follow-up chat is unavailable in offline mode"
+                ),
+                max_length=getattr(config, "MAX_AI_FOLLOWUP_CHARS", 4000),
+                disabled=not remote_enabled,
+            )
 
         # Status
         yield Static(self._status or "Ready.", id="status-bar")
@@ -267,7 +311,10 @@ Screen {
 
     def on_mount(self) -> None:
         self._populate_function_table()
-        self._set_status(f"Loaded {len(self.function_addresses)} functions — select one to analyze.")
+        if self._startup_warnings:
+            self._set_status(self._startup_warnings[0])
+        else:
+            self._set_status(f"Loaded {len(self.function_addresses)} functions — select one to analyze.")
 
     def _populate_function_table(self):
         table: DataTable = self.query_one("#func-table")
@@ -278,19 +325,37 @@ Screen {
             if not func:
                 continue
             # Check if already cached in DB
-            cached = self.trace_store.get_cached_analysis(self.session_id, addr)
+            cached = self.trace_store.get_cached_analysis(
+                self.session_id,
+                addr,
+                cache_key=getattr(self.ai_analyzer, "cache_key", None),
+            )
             if cached:
                 self._analyses[addr] = cached
-                badge = cached.risk_badge
-                name  = cached.suggested_name
+                try:
+                    self.trace_store.save_function_analysis(self.session_id, func, cached)
+                    self.trace_store.save_patterns(
+                        self.session_id,
+                        addr,
+                        getattr(func, "patterns", []),
+                    )
+                except Exception as exc:
+                    self._startup_warnings.append(
+                        f"Could not persist cached result at 0x{addr:08x}: {exc}"
+                    )
+                badge = Text(
+                    _display_text(cached.risk_badge, 20),
+                    style=f"bold {self._risk_color(cached.risk_level)}",
+                )
+                name = Text(_display_text(cached.suggested_name, 30))
             else:
-                badge = "[dim][ -- ][/dim]"
-                name  = func.name
+                badge = Text("[ -- ]", style="dim")
+                name = Text(_display_text(func.name, 30))
 
             table.add_row(
                 badge,
                 f"0x{addr:08x}",
-                name[:30],
+                name,
                 str(len(func.instructions)),
                 key=str(addr),
             )
@@ -319,6 +384,18 @@ Screen {
 
         # Show cached analysis if available
         if address in self._analyses:
+            context_id = self._context_id(address)
+            if not self.ai_analyzer.has_context(context_id):
+                try:
+                    self.ai_analyzer.seed_context(
+                        func,
+                        self.binary_info,
+                        self._analyses[address],
+                        context_id=context_id,
+                    )
+                except Exception as exc:
+                    self._set_status(f"Could not prepare follow-up context: {exc}")
+            self._sync_loading_indicator()
             self._render_ai_analysis(self._analyses[address])
         else:
             self._request_ai_analysis(address)
@@ -330,11 +407,11 @@ Screen {
     def _render_disassembly(self, func):
         log: RichLog = self.query_one("#disasm-log")
         log.clear()
-        log.write(f"[bold cyan]Function:[/bold cyan] [yellow]{func.name}[/yellow]  "
+        log.write(f"[bold cyan]Function:[/bold cyan] [yellow]{_markup_text(func.name)}[/yellow]  "
                   f"[dim]({len(func.instructions)} instructions)[/dim]\n")
 
         for insn in func.instructions:
-            mnem = insn.mnemonic
+            mnem = str(insn.mnemonic)
             # Color-code by mnemonic category
             if mnem in ('call', 'callq'):
                 color = "yellow"
@@ -351,14 +428,14 @@ Screen {
 
             log.write(
                 f"[dim]0x{insn.address:08x}[/dim]  "
-                f"[{color}]{mnem:<8}[/{color}] "
-                f"[bright_white]{insn.op_str}[/bright_white]"
+                f"[{color}]{_markup_text(mnem, 64):<8}[/{color}] "
+                f"[bright_white]{_markup_text(insn.op_str)}[/bright_white]"
             )
 
         if func.strings_referenced:
             log.write("\n[dim]── Strings referenced ──[/dim]")
             for s in func.strings_referenced:
-                log.write(f'[green]  "{s}"[/green]')
+                log.write(f'[green]  "{_markup_text(s)}"[/green]')
 
     # ------------------------------------------------------------------
     # Register / snapshot panel
@@ -377,9 +454,9 @@ Screen {
                 val_str = f"{hex(num):>12}  ({num})"
             except (ValueError, TypeError):
                 val_str = str(val)
-            log.write(f"[cyan]{reg.upper():<5}[/cyan]  {val_str}")
+            log.write(f"[cyan]{_markup_text(str(reg).upper(), 32):<5}[/cyan]  {_markup_text(val_str)}")
         if snapshot.entry_stack_hex:
-            log.write(f"\n[dim]Stack: {snapshot.entry_stack_hex}[/dim]")
+            log.write(f"\n[dim]Stack: {_markup_text(snapshot.entry_stack_hex)}[/dim]")
 
     # ------------------------------------------------------------------
     # CFG panel
@@ -391,9 +468,9 @@ Screen {
         try:
             cfg = CFGBuilder().build(func)
             text = CFGTextRenderer().render(cfg)
-            log.write(text)
+            log.write(Text(_display_text(text)))
         except Exception as exc:
-            log.write(f"[dim]CFG unavailable: {exc}[/dim]")
+            log.write(f"[dim]CFG unavailable: {_markup_text(exc)}[/dim]")
 
     # ------------------------------------------------------------------
     # Patterns panel
@@ -407,35 +484,23 @@ Screen {
             log.write("[dim]No malware patterns detected in this function.[/dim]")
             return
         for p in patterns:
-            log.write(
-                f"[bold {p.severity_color}]{p.severity_badge}[/bold {p.severity_color}] "
-                f"[bold]{p.name}[/bold]  [dim]@ 0x{p.address:08x}[/dim]"
+            severity = str(getattr(p, "severity", "INFO")).upper()
+            severity_color = {"HIGH": "red", "MEDIUM": "yellow", "INFO": "cyan"}.get(
+                severity,
+                "white",
             )
-            log.write(f"  {p.description}")
+            severity_badge = {"HIGH": "[HIGH]", "MEDIUM": "[MED ]", "INFO": "[INFO]"}.get(
+                severity,
+                "[??? ]",
+            )
+            log.write(
+                f"[bold {severity_color}]{_markup_text(severity_badge)}[/bold {severity_color}] "
+                f"[bold]{_markup_text(p.name)}[/bold]  [dim]@ 0x{p.address:08x}[/dim]"
+            )
+            log.write(f"  {_markup_text(p.description)}")
             if p.evidence:
-                log.write(f"  [dim]Evidence: {p.evidence}[/dim]")
+                log.write(f"  [dim]Evidence: {_markup_text(p.evidence)}[/dim]")
             log.write("")
-
-    # ------------------------------------------------------------------
-    # Network panel (called from dynamic mode callbacks)
-    # ------------------------------------------------------------------
-
-    def append_network_event(self, event: dict):
-        """Append a network event to the Network tab (thread-safe via call_from_thread)."""
-        def _do():
-            log: RichLog = self.query_one("#network-log")
-            evt   = event.get('event', '')
-            fn    = event.get('function', '')
-            ip    = event.get('ip', '')
-            port  = event.get('port', 0)
-            size  = event.get('size', 0)
-            url   = event.get('url', '')
-            dest  = url or (f"{ip}:{port}" if ip else '?')
-            log.write(
-                f"[cyan]{evt}[/cyan] [yellow]{fn}[/yellow]  "
-                f"[white]{dest}[/white]  [dim]{size} bytes[/dim]"
-            )
-        self.call_from_thread(_do)
 
     # ------------------------------------------------------------------
     # AI analysis panel
@@ -443,6 +508,7 @@ Screen {
 
     def _request_ai_analysis(self, address: int):
         if address in self._analyzing:
+            self._sync_loading_indicator()
             return
         self._analyzing.add(address)
 
@@ -450,9 +516,10 @@ Screen {
         self.query_one("#ai-loading").display = True
         ai_log: RichLog = self.query_one("#ai-log")
         ai_log.clear()
-        ai_log.write("[dim]Analyzing with AI…[/dim]")
+        ai_log.write("[dim]Analyzing function…[/dim]")
 
-        self._set_status(f"Sending 0x{address:08x} to Claude for analysis…")
+        analyzer_name = getattr(self.ai_analyzer, "display_name", "configured analyzer")
+        self._set_status(f"Analyzing 0x{address:08x} with {analyzer_name}…")
         self._run_ai_worker(address)
 
     @work(thread=True)
@@ -461,63 +528,106 @@ Screen {
         snapshot = None  # populated if dynamic mode has data
 
         try:
-            analysis = self.ai_analyzer.analyze_function(
-                func, self.binary_info, snapshot
-            )
-            self._analyses[address] = analysis
-            self.trace_store.save_function_analysis(
-                self.session_id, func, analysis, snapshot
-            )
+            if not func or not func.instructions:
+                raise ValueError("Function has no instructions to analyze")
+            with self._ai_lock:
+                self.trace_store.save_patterns(
+                    self.session_id,
+                    address,
+                    getattr(func, "patterns", []),
+                )
+                analysis = self.ai_analyzer.analyze_function(
+                    func,
+                    self.binary_info,
+                    snapshot,
+                    context_id=self._context_id(address),
+                )
+                self.trace_store.save_function_analysis(
+                    self.session_id,
+                    func,
+                    analysis,
+                    snapshot,
+                )
             self.post_message(AnalysisReady(address, analysis))
         except Exception as exc:
-            self.post_message(StatusUpdate(f"AI error: {exc}"))
-        finally:
-            self._analyzing.discard(address)
+            self.post_message(AnalysisFailed(address, str(exc)))
 
     def on_analysis_ready(self, event: AnalysisReady):
-        self.query_one("#ai-loading").display = False
+        self._analyzing.discard(event.address)
+        self._analyses[event.address] = event.analysis
+        self._sync_loading_indicator()
         if event.address == self._current_address:
             self._render_ai_analysis(event.analysis)
-        # Update function table row with name and risk
+            self._set_status(
+                f"Analysis complete: 0x{event.address:08x}  "
+                f"→ {event.analysis.suggested_name}  [{event.analysis.risk_level}]"
+            )
+        elif self._current_address not in self._analyzing:
+            self._set_status(f"Background analysis complete: 0x{event.address:08x}")
+        # Update function table row with name and risk.
         self._update_table_row(event.address, event.analysis)
-        self._set_status(
-            f"Analysis complete: 0x{event.address:08x}  "
-            f"→ {event.analysis.suggested_name}  [{event.analysis.risk_level}]"
-        )
+
+    def on_analysis_failed(self, event: AnalysisFailed):
+        self._analyzing.discard(event.address)
+        self._sync_loading_indicator()
+        if event.address == self._current_address:
+            log: RichLog = self.query_one("#ai-log")
+            log.clear()
+            log.write(
+                f"[bold red]Analysis failed[/bold red]\n{_markup_text(event.error)}\n\n"
+                "[dim]Select the function again to retry.[/dim]"
+            )
+            self._set_status(f"Analysis failed for 0x{event.address:08x}: {event.error}")
+        elif self._current_address not in self._analyzing:
+            self._set_status(f"Background analysis failed for 0x{event.address:08x}")
 
     def _render_ai_analysis(self, analysis):
         self.query_one("#ai-loading").display = False
         log: RichLog = self.query_one("#ai-log")
         log.clear()
 
-        risk_color = analysis.risk_color
+        risk_color = self._risk_color(analysis.risk_level)
         log.write(
-            f"[bold {risk_color}]{analysis.risk_badge}[/bold {risk_color}]  "
-            f"[bold]{analysis.suggested_name}[/bold]\n"
+            f"[bold {risk_color}]{_markup_text(analysis.risk_badge)}[/bold {risk_color}]  "
+            f"[bold]{_markup_text(analysis.suggested_name)}[/bold]\n"
         )
 
-        log.write(f"[bold]Summary:[/bold]\n{analysis.summary}\n")
+        log.write(f"[bold]Summary:[/bold]\n{_markup_text(analysis.summary)}\n")
 
         if analysis.mitre_technique:
-            log.write(f"[bold]MITRE ATT&CK:[/bold] [yellow]{analysis.mitre_technique}[/yellow]\n")
+            log.write(
+                f"[bold]MITRE ATT&CK:[/bold] "
+                f"[yellow]{_markup_text(analysis.mitre_technique)}[/yellow]\n"
+            )
 
-        if analysis.parameters:
+        if isinstance(analysis.parameters, list) and analysis.parameters:
             log.write("[bold]Parameters:[/bold]")
             for p in analysis.parameters:
-                log.write(f"  [cyan]{p.get('name','?')}[/cyan] ({p.get('type','?')}): {p.get('description','')}")
+                if not isinstance(p, dict):
+                    continue
+                log.write(
+                    f"  [cyan]{_markup_text(p.get('name', '?'))}[/cyan] "
+                    f"({_markup_text(p.get('type', '?'))}): "
+                    f"{_markup_text(p.get('description', ''))}"
+                )
 
-        log.write(f"\n[bold]Return value:[/bold]\n{analysis.return_value}\n")
+        log.write(
+            f"\n[bold]Return value:[/bold]\n{_markup_text(analysis.return_value)}\n"
+        )
 
-        if analysis.behaviors:
+        if isinstance(analysis.behaviors, list) and analysis.behaviors:
             log.write("[bold]Behaviors:[/bold]")
             for b in analysis.behaviors:
-                log.write(f"  • {b}")
+                log.write(f"  • {_markup_text(b)}")
 
         if analysis.notes:
-            log.write(f"\n[bold]Notes:[/bold]\n[dim]{analysis.notes}[/dim]")
+            log.write(f"\n[bold]Notes:[/bold]\n[dim]{_markup_text(analysis.notes)}[/dim]")
 
         log.write("\n[dim]─────────────────────────────────────[/dim]")
-        log.write("[dim]Type a question below to ask the AI.[/dim]")
+        if getattr(self.ai_analyzer, "remote_enabled", True):
+            log.write("[dim]Type a question below to ask the AI.[/dim]")
+        else:
+            log.write("[dim]Offline deterministic result; follow-up chat is disabled.[/dim]")
 
     # ------------------------------------------------------------------
     # Chat / follow-up
@@ -529,26 +639,57 @@ Screen {
         question = event.value.strip()
         if not question:
             return
+        address = self._current_address
+        if address is None:
+            self._set_status("Select and analyze a function before asking a follow-up.")
+            return
+        if address not in self._analyses:
+            self._set_status("Wait for the selected function analysis to complete.")
+            return
+        if self._followup_running:
+            self._set_status("A follow-up request is already running.")
+            return
         event.input.clear()
+        event.input.disabled = True
+        self._followup_running = True
 
         ai_log: RichLog = self.query_one("#ai-log")
-        ai_log.write(f"\n[bold cyan]You:[/bold cyan] {question}")
+        ai_log.write(f"\n[bold cyan]You:[/bold cyan] {_markup_text(question)}")
         ai_log.write("[dim]Thinking…[/dim]")
         self._set_status("Waiting for AI follow-up…")
-        self._run_followup_worker(question)
+        self._run_followup_worker(address, question)
 
     @work(thread=True)
-    def _run_followup_worker(self, question: str):
+    def _run_followup_worker(self, address: int, question: str):
         try:
-            answer = self.ai_analyzer.ask_followup(question)
-            self.post_message(FollowupReady(answer))
+            context_id = self._context_id(address)
+            with self._ai_lock:
+                if not self.ai_analyzer.has_context(context_id):
+                    func = self.disassembler.get_function(address)
+                    analysis = self._analyses.get(address)
+                    if func and analysis:
+                        self.ai_analyzer.seed_context(
+                            func,
+                            self.binary_info,
+                            analysis,
+                            context_id=context_id,
+                        )
+                answer = self.ai_analyzer.ask_followup(question, context_id=context_id)
+            self.post_message(FollowupReady(address, answer))
         except Exception as exc:
-            self.post_message(FollowupReady(f"[Error: {exc}]"))
+            self.post_message(FollowupReady(address, str(exc), failed=True))
 
     def on_followup_ready(self, event: FollowupReady):
-        log: RichLog = self.query_one("#ai-log")
-        log.write(f"[bold green]AI:[/bold green] {event.text}\n")
-        self._set_status("Ready.")
+        self._followup_running = False
+        self.query_one("#chat-input", Input).disabled = False
+        if event.address == self._current_address:
+            log: RichLog = self.query_one("#ai-log")
+            label = "Error" if event.failed else "Assistant"
+            color = "red" if event.failed else "green"
+            log.write(
+                f"[bold {color}]{label}:[/bold {color}] {_markup_text(event.text)}\n"
+            )
+        self._set_status("Follow-up failed." if event.failed else "Ready.")
 
     # ------------------------------------------------------------------
     # Actions
@@ -556,10 +697,20 @@ Screen {
 
     def action_analyze_all(self):
         """Queue AI analysis for all functions not yet analyzed."""
-        pending = [a for a in self.function_addresses if a not in self._analyses]
+        if not self._allow_bulk_analysis and getattr(self.ai_analyzer, "remote_enabled", True):
+            self._set_status(
+                "Bulk remote analysis is locked. Restart with --accept-ai-cost or use --offline."
+            )
+            return
+        pending = [
+            address
+            for address in self.function_addresses
+            if address not in self._analyses and address not in self._analyzing
+        ][:self._max_bulk_functions]
         if not pending:
             self._set_status("All functions already analyzed.")
             return
+        self._analyzing.update(pending)
         self._set_status(f"Queueing {len(pending)} functions for AI analysis…")
         self._run_batch_worker(pending)
 
@@ -568,26 +719,37 @@ Screen {
         for i, addr in enumerate(addresses):
             func = self.disassembler.get_function(addr)
             if not func or not func.instructions:
+                self.post_message(AnalysisFailed(addr, "Function has no instructions to analyze"))
                 continue
             try:
-                analysis = self.ai_analyzer.analyze_function(func, self.binary_info)
-                self._analyses[addr] = analysis
-                self.trace_store.save_function_analysis(self.session_id, func, analysis)
+                with self._ai_lock:
+                    self.trace_store.save_patterns(
+                        self.session_id,
+                        addr,
+                        getattr(func, "patterns", []),
+                    )
+                    analysis = self.ai_analyzer.analyze_function(
+                        func,
+                        self.binary_info,
+                        context_id=self._context_id(addr),
+                    )
+                    self.trace_store.save_function_analysis(
+                        self.session_id,
+                        func,
+                        analysis,
+                    )
                 self.post_message(AnalysisReady(addr, analysis))
                 self.post_message(StatusUpdate(
                     f"Batch: {i+1}/{len(addresses)} — {analysis.suggested_name}"
                 ))
             except Exception as exc:
-                self.post_message(StatusUpdate(f"Batch error at 0x{addr:08x}: {exc}"))
+                self.post_message(AnalysisFailed(addr, str(exc)))
 
-    def action_focus_search(self):
+    def action_focus_chat(self):
         self.query_one("#chat-input").focus()
 
     def action_blur_chat(self):
         self.query_one("#func-table").focus()
-
-    def action_reset_session(self):
-        self._set_status("DB session reset not implemented in this version.")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -599,7 +761,7 @@ Screen {
     def _set_status(self, text: str):
         try:
             bar: Static = self.query_one("#status-bar")
-            bar.update(f" {text}")
+            bar.update(Text(f" {_display_text(text)}"))
         except Exception:
             pass
 
@@ -608,22 +770,30 @@ Screen {
         table: DataTable = self.query_one("#func-table")
         key = str(address)
         try:
-            risk_color = analysis.risk_color
-            badge = f"[bold {risk_color}]{analysis.risk_badge}[/bold {risk_color}]"
-            func = self.disassembler.get_function(address)
-            insn_count = len(func.instructions) if func else 0
-
-            # DataTable doesn't support in-place row update — remove and re-add
-            # This is a limitation we work around by tracking row positions
-            # For now, we rebuild the whole table column by column is not supported;
-            # just update the name via a workaround using the row key lookup
-            row_index = None
-            for i, row_key in enumerate(table.rows):
-                if str(row_key) == key:
-                    row_index = i
-                    break
-            if row_index is not None:
-                table.update_cell(key, "Risk",    badge,                         update_width=False)
-                table.update_cell(key, "Name",    analysis.suggested_name[:30],  update_width=False)
+            risk_color = self._risk_color(analysis.risk_level)
+            badge = Text(_display_text(analysis.risk_badge, 20), style=f"bold {risk_color}")
+            table.update_cell(key, "Risk", badge, update_width=False)
+            table.update_cell(
+                key,
+                "Name",
+                Text(_display_text(analysis.suggested_name, 30)),
+                update_width=False,
+            )
         except Exception:
             pass
+
+    def _context_id(self, address: int) -> str:
+        return f"session:{self.session_id}:function:{address:x}"
+
+    def _sync_loading_indicator(self) -> None:
+        spinner = self.query_one("#ai-loading")
+        spinner.display = self._current_address in self._analyzing
+
+    def _risk_color(self, risk_level: str) -> str:
+        return {
+            "LOW": "green",
+            "MEDIUM": "yellow",
+            "HIGH": "red",
+            "CRITICAL": "bright_red",
+            "UNKNOWN": "white",
+        }.get(str(risk_level).upper(), "white")

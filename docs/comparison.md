@@ -8,7 +8,7 @@ between first-pass triage and deeper manual analysis.
 | Disassembler | Deep manual reverse engineering | Adds triage summaries and report output |
 | Sandbox | Runtime behavior and detonation telemetry | Adds function-level notes and export artifacts |
 | YARA tooling | Rule authoring and testing | Generates analyst-review seed rules |
-| CTI platform | Knowledge management and enrichment | Produces JSON and IOC material for ingest |
+| CTI platform | Knowledge management and enrichment | Produces versioned JSON and heuristic strings that require a custom adapter and review |
 | AIDebug | Triage to detection handoff | Combines patterns, ATT&CK candidates, reports, and exports |
 
 ## Where AIDebug Fits

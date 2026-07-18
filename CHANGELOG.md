@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+- Added fail-closed release metadata, dependency, package-content, wheel smoke,
+  lint, test, Bandit, dependency-audit, and secret-scan gates.
+- Hardened PyPI publishing so an exact version-matched release tag is tested,
+  built once, and the same artifact is published without `skip-existing`.
+- Corrected capability, privacy, offline/remote-AI, IOC, integration, dynamic
+  instrumentation, screenshot, and packaging claims across the documentation.
+- Consolidated the heuristic signature database under `analysis/data/` and
+  removed an unreferenced generated malware report from the source tree.
+- Expanded safe CLI, analyzer, storage, report, and release metadata tests.
+- Added explicit CI/release validation for the Frida 17.x dynamic extra and the
+  declared Textual compatibility floor.
+- Updated illustrative JSON evidence to the current session schema v2 and
+  documented sample, discovery, instruction, and event-retention caps.
+- Made remote AI and AI-backed YARA paths explicit, bounded, prompt-isolated,
+  locally validated, and fail-closed; deliberate offline analysis remains
+  deterministic and does not require the optional AI dependency.
+- Hardened PE/ELF parsing, function discovery, disassembly, CFG traversal,
+  heuristic descriptions, terminal rendering, TUI request handling, and
+  private atomic HTML/JSON/YARA output.
+- Added bounded undefined dynamic-symbol extraction for ELF inputs and explicit
+  symbol/import/export resource ceilings.
+- Serialized SQLite schema migration, made event caps authoritative across
+  concurrent connections, and tightened database/sidecar permissions on a
+  best-effort basis.
+- Added Frida script-readiness and error reporting, ASLR/PIE-aware function
+  hooks, bounded event buffers, correct wide-string reads, successful-call byte
+  counts, and socket-to-peer correlation for supported Winsock telemetry.
+- Added session IDs to generated filenames to prevent cross-session report
+  collisions in a shared output directory.
+
+These changes are newer than v1.1.0 and require a new version and tag before
+they can be described as released.
+
 ## 1.1.0 - 2026-06-15
 
 - Added reviewer-facing maturity documentation for validation, safety, sample

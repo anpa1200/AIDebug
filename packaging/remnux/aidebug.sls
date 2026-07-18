@@ -23,9 +23,10 @@ remnux-python3-packages-aidebug-venv:
 
 remnux-python3-packages-aidebug:
   pip.installed:
-    - name: 1200km-aidebug
+    # Proposal only: update this reviewed version deliberately after validation.
+    - name: 1200km-aidebug==1.1.0
     - bin_env: /opt/aidebug/bin/python3
-    - upgrade: True
+    - upgrade: False
     - require:
       - virtualenv: remnux-python3-packages-aidebug-venv
 

@@ -44,11 +44,89 @@ def test_json_export_builds_risk_summary_and_iocs():
         }
     ]
 
-    doc = JSONExporter()._build(session, traces, api_calls)
+    network_events = [
+        {
+            "event_type": "connect",
+            "function": "connect",
+            "ip": "203.0.113.8",
+            "port": 443,
+            "size": 0,
+            "url": "https://example.test/",
+            "headers": "Authorization: secret",
+            "timestamp": 42,
+        }
+    ]
+    patterns = [
+        {
+            "address": 0x401000,
+            "name": "xor_decryption_loop",
+            "description": "XOR loop",
+            "severity": "HIGH",
+            "evidence": "xor eax, 0x41",
+        }
+    ]
+    runtime_events = [
+        {
+            "event_type": "executable_protection_transition",
+            "logged_at": "2026-06-15T00:02:00Z",
+            "payload_json": json.dumps(
+                {
+                    "event": "executable_protection_transition",
+                    "address": "0x500000",
+                    "confidence": "heuristic",
+                }
+            ),
+        }
+    ]
 
-    assert doc["_schema"] == "aidebug/session/v1"
+    doc = JSONExporter()._build(
+        session,
+        traces,
+        api_calls,
+        network_events=network_events,
+        runtime_events=runtime_events,
+        patterns=patterns,
+    )
+
+    assert doc["_schema"] == "aidebug/session/v2"
     assert doc["summary"]["highest_risk"] == "HIGH"
     assert doc["summary"]["mitre_techniques"] == {"T1027": 1}
     assert doc["summary"]["api_calls_logged"] == 1
+    assert doc["summary"]["network_events_logged"] == 1
+    assert doc["summary"]["runtime_events_logged"] == 1
     assert doc["summary"]["ioc_strings"][0]["value"] == "c2.example.test"
     assert doc["functions"][0]["name"] == "decode_config"
+    assert doc["functions"][0]["size_bytes"] is None
+    assert doc["functions"][0]["deterministic_patterns"][0]["severity"] == "HIGH"
+    assert doc["network_events"][0]["ip"] == "203.0.113.8"
+    assert doc["runtime_events"][0]["payload"]["confidence"] == "heuristic"
+    assert doc["runtime_events"][0]["timestamp"] == "2026-06-15T00:02:00Z"
+    assert "sensitive" in doc["_privacy_notice"]
+
+
+def test_json_export_normalizes_malformed_external_records(tmp_path):
+    exporter = JSONExporter()
+    output = tmp_path / "report.json"
+    session = {"id": 1, "bits": "not-a-number", "filename": None}
+    traces = [
+        "invalid",
+        {
+            "address": "nope",
+            "risk_level": "<script>",
+            "ai_analysis_json": "[]",
+            "snapshot_json": '{"entry_registers":{"x":NaN}}',
+            "strings_referenced": '[1, {"bad": true}, "valid-ioc.test"]',
+            "calls_to": "{}",
+        },
+    ]
+
+    exporter.export(session, traces, [{"args_json": "{}"}], output)
+    doc = json.loads(output.read_text(encoding="utf-8"))
+
+    assert doc["binary"]["bits"] == 0
+    assert doc["summary"]["risk_counts"]["UNKNOWN"] == 1
+    assert doc["functions"][0]["address"] == "0x0"
+    assert doc["functions"][0]["snapshot"] is not None
+    assert doc["functions"][0]["snapshot"]["entry_registers"]["x"] is None
+    assert doc["functions"][0]["calls_to"] == []
+    assert doc["api_calls"][0]["args"] == []
