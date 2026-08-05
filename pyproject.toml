@@ -42,9 +42,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ai = ["anthropic>=0.40", "yara-python>=4.5"]
+ai = ["anthropic>=0.40", "yara-python>=4.5.4"]
 dynamic = ["frida>=17,<18"]
-all = ["anthropic>=0.40", "frida>=17,<18", "yara-python>=4.5"]
+all = ["anthropic>=0.40", "frida>=17,<18", "yara-python>=4.5.4"]
 dev = [
   "anthropic>=0.40",
   "bandit>=1.9.4",
@@ -56,7 +56,7 @@ dev = [
   "ruff>=0.6",
   "tomli>=2; python_version < '3.11'",
   "twine>=5",
-  "yara-python>=4.5",
+  "yara-python>=4.5.4",
 ]
 
 [project.scripts]
