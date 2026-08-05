@@ -2,4 +2,4 @@ capstone>=5
 pefile>=2023.2.7
 pyelftools>=0.31
 textual>=0.52.0
-rich>=13.0.0
+rich>=15.0.0
