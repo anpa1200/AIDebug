@@ -48,7 +48,7 @@ all = ["anthropic>=0.40", "frida>=17,<18", "yara-python>=4.5.4"]
 dev = [
   "anthropic>=0.40",
   "bandit>=1.9.4",
-  "build>=1.2",
+  "build>=1.5.0",
   "packaging>=24",
   "pip-audit>=2.10.1",
   "pytest>=8",
