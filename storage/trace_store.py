@@ -8,6 +8,7 @@ import re
 import sqlite3
 import stat
 import threading
+import time
 import warnings
 
 import config
@@ -128,14 +129,22 @@ class TraceStore:
         self._drop_warnings = set()
         self.conn = sqlite3.connect(
             db_path,
-            timeout=5.0,
+            # Several TraceStore instances can legitimately open the same
+            # fresh database at once (e.g. concurrent analysis sessions);
+            # the first one to arrive runs schema DDL and a WAL-mode switch,
+            # both of which take an exclusive lock the others must wait out.
+            # 5s was tight enough to occasionally raise "database is locked"
+            # under real contention/CI load even though every writer makes
+            # progress; 15s stays comfortably below realistic caller
+            # timeouts while giving that startup race enough room.
+            timeout=15.0,
             check_same_thread=False,
         )
         self.conn.row_factory = sqlite3.Row
         try:
             self.conn.execute('PRAGMA foreign_keys=ON')
-            self.conn.execute('PRAGMA busy_timeout=5000')
-            self._initialize_schema()
+            self.conn.execute('PRAGMA busy_timeout=15000')
+            self._initialize_schema_with_retry()
             if db_path != ':memory:':
                 self.conn.execute('PRAGMA journal_mode=WAL')
                 self.conn.execute('PRAGMA synchronous=NORMAL')
@@ -182,6 +191,28 @@ class TraceStore:
             if statement and sqlite3.complete_statement(statement):
                 yield statement
                 pending.clear()
+
+    def _initialize_schema_with_retry(self, attempts: int = 8) -> None:
+        """_initialize_schema() takes an exclusive BEGIN IMMEDIATE lock, so when
+        several TraceStore instances open the same fresh (or legacy-schema)
+        database at once, only one proceeds at a time and the rest queue
+        behind it, each doing a real disk-synced commit. Under CI-level disk
+        contention that queue's tail can occasionally still exceed
+        busy_timeout for the last connection in line even though every
+        writer is making progress; retrying a few times with backoff
+        survives that without masking a database that is genuinely stuck
+        (which would keep failing on every attempt and still raise).
+        """
+        delay = 0.1
+        for attempt in range(attempts):
+            try:
+                self._initialize_schema()
+                return
+            except sqlite3.OperationalError as exc:
+                if 'locked' not in str(exc).lower() or attempt == attempts - 1:
+                    raise
+                time.sleep(delay)
+                delay *= 2
 
     def _initialize_schema(self):
         """Serialize schema validation and additive migrations across connections."""
