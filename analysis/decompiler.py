@@ -246,3 +246,85 @@ class GhidraDecompiler:
     @classmethod
     def _diagnostic(cls, data: bytes) -> str:
         return cls._safe_text(data.decode("utf-8", errors="replace"), 4_000).strip()
+
+
+def render_full_decompilation(
+    binary_info: BinaryInfo,
+    disassembler,
+    addresses: list[int],
+) -> str:
+    """Combine all available function reconstructions into one auditable file."""
+    lines = [
+        "/*",
+        " * AIDebug full-program Ghidra reconstruction",
+        f" * Input: {Path(binary_info.filename).name}",
+        f" * SHA-256: {binary_info.sha256}",
+        f" * Architecture: {binary_info.arch} {binary_info.bits}-bit",
+        " *",
+        " * This is reconstructed C-like code, not recovered original source.",
+        " * Function boundaries, types, names, parameters, and control flow",
+        " * remain hypotheses that must be checked against machine instructions.",
+        " */",
+        "",
+    ]
+    generated = 0
+    missing = []
+    for address in addresses:
+        function = disassembler.get_function(address)
+        if function is None or not getattr(function, "decompiled_code", ""):
+            missing.append(address)
+            continue
+        generated += 1
+        lines.extend((
+            "/* ================================================================== */",
+            f"/* Function {function.name} at 0x{address:x} */",
+            f"/* Backend: {function.decompile_backend or 'ghidra'}; "
+            f"language: {function.decompile_language or 'c'}-like */",
+            function.decompiled_code.rstrip(),
+            "",
+        ))
+    if missing:
+        lines.extend((
+            "/* ================================================================== */",
+            f"/* {len(missing)} discovered function(s) did not produce output:",
+            " * " + ", ".join(f"0x{address:x}" for address in missing[:100]),
+            " */",
+            "",
+        ))
+    if not generated:
+        raise DecompilerError("No decompiled functions are available for full-program output")
+    return "\n".join(lines)
+
+
+def write_full_decompilation(
+    destination: str | os.PathLike[str],
+    binary_info: BinaryInfo,
+    disassembler,
+    addresses: list[int],
+) -> Path:
+    """Write full-program reconstruction once with owner-only permissions."""
+    path = Path(destination).expanduser()
+    parent = path.parent.resolve(strict=True)
+    if not parent.is_dir():
+        raise DecompilerError(f"Decompilation output parent is not a directory: {parent}")
+    output_path = parent / path.name
+    content = render_full_decompilation(binary_info, disassembler, addresses)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(output_path, flags, 0o600)
+    except FileExistsError as exc:
+        raise DecompilerError(
+            f"Refusing to overwrite existing decompilation output: {output_path}"
+        ) from exc
+    except OSError as exc:
+        raise DecompilerError(f"Unable to create decompilation output: {exc}") from exc
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
+            output.write(content)
+    except BaseException:
+        try:
+            output_path.unlink()
+        except OSError:
+            pass
+        raise
+    return output_path

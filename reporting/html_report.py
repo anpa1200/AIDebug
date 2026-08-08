@@ -423,6 +423,23 @@ class HTMLReporter:
             mitre_html = f'<div class="mitre-tag">{mitre}</div>' if mitre else ''
             notes_html = f'<div class="notes-box">{notes}</div>' if notes else ''
             ret_html   = f'<div class="notes-box">{ret_val}</div>' if ret_val else ''
+            review = ai.get('decompilation_review')
+            review_html = ''
+            if isinstance(review, dict):
+                review_status = _esc(review.get('status') or 'NOT_AVAILABLE')
+                review_confidence = _esc(review.get('confidence') or 'LOW')
+                review_findings = _text_list(review.get('findings'))
+                finding_items = ''.join(f'<li>{_esc(item)}</li>' for item in review_findings)
+                corrected = _esc(review.get('corrected_pseudocode') or '')
+                corrected_html = (
+                    f'<pre class="decompiled-code">{corrected}</pre>' if corrected else ''
+                )
+                review_html = (
+                    '<div class="section-title">LLM Decompilation Cross-check</div>'
+                    f'<div class="notes-box">Status: {review_status}; '
+                    f'confidence: {review_confidence}</div>'
+                    f'<ul class="behavior-list">{finding_items}</ul>{corrected_html}'
+                )
 
             disasm_html = self._render_disasm(disasm)
             decompile_html = ''
@@ -466,6 +483,8 @@ class HTMLReporter:
                 {patterns_html}
 
                 {decompile_html}
+
+                {review_html}
 
                 <div class="section-title">Control Flow Graph</div>
                 {cfg_html}

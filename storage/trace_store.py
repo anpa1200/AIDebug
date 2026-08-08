@@ -410,6 +410,7 @@ class TraceStore:
             'mitre_technique': analysis.mitre_technique,
             'risk_level':      analysis.risk_level,
             'notes':           analysis.notes,
+            'decompilation_review': getattr(analysis, 'decompilation_review', {}),
         })
         cache_key = getattr(analysis, 'cache_key', '') or config.AI_CACHE_KEY
         if analysis.suggested_name == 'parse_error':

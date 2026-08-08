@@ -29,6 +29,12 @@ class AIAnalysis:
     mitre_technique: str | None
     risk_level: str          # UNKNOWN / LOW / MEDIUM / HIGH / CRITICAL
     notes: str
+    decompilation_review: dict = field(default_factory=lambda: {
+        'status': 'NOT_AVAILABLE',
+        'confidence': 'LOW',
+        'findings': [],
+        'corrected_pseudocode': '',
+    })
     raw_response: str = field(default='', repr=False)
     cache_key: str = field(default='', repr=False)
 
@@ -83,8 +89,20 @@ these fields and value types:
   "behaviors":       ["observable", "behaviors", "as", "a", "list"],
   "mitre_technique": "T1234 - Name  or  null",
   "risk_level":      "LOW|MEDIUM|HIGH|CRITICAL",
-  "notes":           "anti-analysis tricks, obfuscation, or analyst notes"
+  "notes":           "anti-analysis tricks, obfuscation, or analyst notes",
+  "decompilation_review": {{
+    "status": "NOT_AVAILABLE|CONSISTENT|PARTIAL|CONTRADICTED",
+    "confidence": "LOW|MEDIUM|HIGH",
+    "findings": ["specific agreement, uncertainty, or contradiction grounded in assembly"],
+    "corrected_pseudocode": "bounded correction when needed, otherwise an empty string"
+  }}
 }}
+
+When artifact_data.function.decompilation is present, cross-check it against the disassembly,
+control flow, calls, strings, and runtime evidence. CONSISTENT means no material contradiction was
+found in the supplied bounded evidence; it is not proof that recovered types or names are exact.
+Use PARTIAL for meaningful uncertainty or omissions and CONTRADICTED for a specific conflict. When
+no decompilation is supplied, use NOT_AVAILABLE, LOW confidence, no findings, and empty correction.
 
 artifact_data:
 {artifact_json}"""
@@ -159,6 +177,9 @@ class AIAnalyzer:
                 mitre_technique=None,
                 risk_level='LOW',
                 notes='Verified from the parsed import address table; no heuristic signature was trusted.',
+                decompilation_review=self._default_decompilation_review(
+                    available=bool(getattr(function, 'decompiled_code', '')),
+                ),
                 cache_key=config.AI_CACHE_KEY,
             )
             self.seed_context(function, binary_info, analysis, snapshot, context_id=context_id)
@@ -220,6 +241,7 @@ class AIAnalyzer:
                 'mitre_technique': analysis.mitre_technique,
                 'risk_level': analysis.risk_level,
                 'notes': analysis.notes,
+                'decompilation_review': analysis.decompilation_review,
             }),
             ensure_ascii=False,
             allow_nan=False,
@@ -279,6 +301,15 @@ class AIAnalyzer:
                 ],
                 'called_from': [hex(a) for a in func.called_from[:5]],
                 'calls_to': [hex(a) for a in func.calls_to[:10]],
+                'decompilation': {
+                    'backend': self._clean_text(func.decompile_backend, 64),
+                    'language': self._clean_text(func.decompile_language, 32),
+                    'warning': self._clean_text(func.decompile_warning, 1_024),
+                    'code': self._clean_text(
+                        func.decompiled_code,
+                        config.MAX_AI_DECOMPILED_CHARS,
+                    ),
+                } if getattr(func, 'decompiled_code', '') else None,
             },
             'runtime_snapshot': None,
             'deterministic_patterns': [],
@@ -410,6 +441,7 @@ class AIAnalyzer:
             'mitre_technique',
             'risk_level',
             'notes',
+            'decompilation_review',
         }
         if not isinstance(data, Mapping) or set(data) != required_fields:
             return self._parse_failure(raw)
@@ -423,6 +455,7 @@ class AIAnalyzer:
             or not isinstance(data['behaviors'], list)
             or not isinstance(data['risk_level'], str)
             or not isinstance(data['notes'], str)
+            or not isinstance(data['decompilation_review'], Mapping)
         ):
             return self._parse_failure(raw)
         if any(
@@ -434,6 +467,28 @@ class AIAnalyzer:
             return self._parse_failure(raw)
         if any(not isinstance(item, str) for item in data['behaviors']):
             return self._parse_failure(raw)
+
+        review = data['decompilation_review']
+        if set(review) != {'status', 'confidence', 'findings', 'corrected_pseudocode'}:
+            return self._parse_failure(raw)
+        status = review.get('status')
+        confidence = review.get('confidence')
+        findings = review.get('findings')
+        corrected = review.get('corrected_pseudocode')
+        if (
+            status not in {'NOT_AVAILABLE', 'CONSISTENT', 'PARTIAL', 'CONTRADICTED'}
+            or confidence not in {'LOW', 'MEDIUM', 'HIGH'}
+            or not isinstance(findings, list)
+            or any(not isinstance(item, str) for item in findings)
+            or not isinstance(corrected, str)
+        ):
+            return self._parse_failure(raw)
+        bounded_review = {
+            'status': status,
+            'confidence': confidence,
+            'findings': [self._clean_text(item, 1_000) for item in findings[:16]],
+            'corrected_pseudocode': self._clean_text(corrected, 8_000),
+        }
 
         suggested = self._clean_text(data.get('suggested_name'), 128, 'unknown_function')
         suggested = re.sub(r'[^a-zA-Z0-9_.$?@-]+', '_', suggested).strip('_') or 'unknown_function'
@@ -476,6 +531,7 @@ class AIAnalyzer:
             mitre_technique=mitre,
             risk_level=risk,
             notes=self._clean_text(data.get('notes'), 4_000),
+            decompilation_review=bounded_review,
             raw_response=raw,
             cache_key=config.AI_CACHE_KEY,
         )
@@ -490,8 +546,21 @@ class AIAnalyzer:
             mitre_technique=None,
             risk_level='UNKNOWN',
             notes='Failed to parse and validate the structured JSON response from remote AI.',
+            decompilation_review=self._default_decompilation_review(),
             raw_response=raw,
         )
+
+    @staticmethod
+    def _default_decompilation_review(*, available: bool = False) -> dict:
+        return {
+            'status': 'PARTIAL' if available else 'NOT_AVAILABLE',
+            'confidence': 'LOW',
+            'findings': (
+                ['Decompiler output is available but was not cross-checked by a remote LLM.']
+                if available else []
+            ),
+            'corrected_pseudocode': '',
+        }
 
     @staticmethod
     def _clean_text(value, limit: int, default: str = '') -> str:
@@ -550,6 +619,9 @@ class OfflineAnalyzer:
                 mitre_technique=None,
                 risk_level='LOW',
                 notes='Deterministic offline result; no sample content was sent to a remote service.',
+                decompilation_review=AIAnalyzer._default_decompilation_review(
+                    available=bool(getattr(function, 'decompiled_code', '')),
+                ),
                 cache_key='offline-v1',
             )
 
@@ -583,6 +655,9 @@ class OfflineAnalyzer:
             mitre_technique=None,
             risk_level=risk,
             notes='Offline deterministic result; remote AI and follow-up inference were not used.',
+            decompilation_review=AIAnalyzer._default_decompilation_review(
+                available=bool(getattr(function, 'decompiled_code', '')),
+            ),
             cache_key='offline-v1',
         )
 

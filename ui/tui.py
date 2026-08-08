@@ -649,6 +649,22 @@ Screen {
         if analysis.notes:
             log.write(f"\n[bold]Notes:[/bold]\n[dim]{_markup_text(analysis.notes)}[/dim]")
 
+        review = getattr(analysis, "decompilation_review", {})
+        if isinstance(review, dict) and review:
+            status = review.get("status", "NOT_AVAILABLE")
+            confidence = review.get("confidence", "LOW")
+            log.write(
+                "\n[bold]LLM decompilation cross-check:[/bold] "
+                f"[cyan]{_markup_text(status, 32)}[/cyan] "
+                f"[dim](confidence: {_markup_text(confidence, 16)})[/dim]"
+            )
+            for finding in review.get("findings", [])[:16]:
+                log.write(f"  • {_markup_text(finding, 1_000)}")
+            corrected = review.get("corrected_pseudocode", "")
+            if corrected:
+                log.write("[bold]Suggested corrected pseudo-code:[/bold]")
+                log.write(Text(_display_text(corrected, 8_000)))
+
         log.write("\n[dim]─────────────────────────────────────[/dim]")
         if getattr(self.ai_analyzer, "remote_enabled", True):
             log.write("[dim]Type a question below to ask the AI.[/dim]")

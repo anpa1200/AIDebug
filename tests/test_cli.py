@@ -49,6 +49,34 @@ def test_main_help_runs():
     assert "--binary" in result.stdout
     assert "--source" in result.stdout
     assert "--decompile" in result.stdout
+    assert "--decompile-all" in result.stdout
+    assert "--learn" in result.stdout
+    assert "--breakpoint" in result.stdout
+
+
+def test_learning_mode_lists_and_opens_lessons_without_database(tmp_path):
+    db_path = tmp_path / "must-not-exist.db"
+    listed = subprocess.run(
+        [sys.executable, "main.py", "--learn", "--db", str(db_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    # Learning mode deliberately conflicts with analysis/storage overrides so
+    # it cannot accidentally create application state.
+    assert listed.returncode == 2
+    assert "--learn cannot be combined" in listed.stderr
+    assert not db_path.exists()
+
+    opened = subprocess.run(
+        [sys.executable, "main.py", "--learn", "mov-load"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert opened.returncode == 0
+    assert "MOV: load from memory" in opened.stdout
+    assert "Pseudo-code" in opened.stdout
 
 
 def test_version_matches_release_metadata():
@@ -231,6 +259,43 @@ def test_offline_cli_decompiles_elf_with_ghidra_and_persists_output(tmp_path):
     assert code.startswith("int ghidra_function")
     assert language == "c"
     assert backend == "ghidra"
+
+
+def test_decompile_all_writes_combined_program(tmp_path):
+    sample = shutil.which("true")
+    if sample is None:
+        pytest.skip("A small local ELF fixture is unavailable")
+    launcher = _fake_ghidra(tmp_path)
+    destination = tmp_path / "whole-program.c"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--binary",
+            sample,
+            "--offline",
+            "--no-tui",
+            "--decompile-all",
+            str(destination),
+            "--ghidra-headless",
+            str(launcher),
+            "--max-functions",
+            "1",
+            "--db",
+            str(tmp_path / "full.db"),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Full decompilation" in result.stdout
+    content = destination.read_text(encoding="utf-8")
+    assert "full-program Ghidra reconstruction" in content
+    assert "not recovered original source" in content
+    assert "int ghidra_function" in content
 
 
 def test_decompile_requires_an_input_before_database_open(tmp_path):

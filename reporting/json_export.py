@@ -148,6 +148,9 @@ class JSONExporter:
                     "mitre_technique": mitre,
                     "risk_level":      risk,
                     "notes":           self._text(ai.get("notes")),
+                    "decompilation_review": self._json_safe_dict(
+                        ai.get("decompilation_review")
+                    ),
                 },
 
                 # Runtime snapshot (populated in dynamic mode)

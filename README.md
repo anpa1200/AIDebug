@@ -10,13 +10,13 @@
 [![REMnux proposal](https://img.shields.io/badge/REMnux-deferred-lightgrey)](https://github.com/REMnux/salt-states/issues/345)
 [![BlackArch proposal](https://img.shields.io/badge/BlackArch-submitted-yellow)](https://github.com/BlackArch/blackarch/issues/4965)
 
-Malware reverse-engineering triage CLI/TUI with deterministic offline analysis,
-optional remote AI explanations, ATT&CK candidates, YARA seeds, heuristic IOC
-strings, and analyst reports.
+Malware reverse-engineering CLI/TUI with deterministic offline triage, Ghidra
+reconstruction, optional LLM cross-checks, active local ELF debugging, guided
+assembly learning, ATT&CK candidates, YARA seeds, and analyst reports.
 
-> **Release status:** the source tree is AIDebug v1.2.0. Until the `v1.2.0`
-> release is tagged and published, PyPI continues to serve historical v1.1.0;
-> install from this repository to use the Ghidra, ELF, and C-source features.
+> **Release status:** the source tree is the AIDebug v1.3.0 candidate. Until a
+> matching release is tagged and published, PyPI continues to serve historical
+> v1.1.0; install from this repository for the current feature set.
 
 ## Project Maturity Evidence
 
@@ -66,6 +66,10 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
 | CFG visualization | Function-level behavior review |
 | Ghidra C-like decompilation | Native-code reconstruction for function triage; not recovered original source |
+| Full reconstruction file | One provenance-marked C-like file for every discovered function |
+| LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
+| Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
+| Learning mode | 44 local assembly, structure-recovery, and Windows-analysis lessons |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -98,12 +102,66 @@ aidebug --binary /path/to/sample.exe --offline --no-tui --decompile \
   --ghidra-headless /opt/ghidra/support/analyzeHeadless
 ```
 
+Reconstruct every discovered function into one file:
+
+```bash
+aidebug --binary /path/to/sample.elf --offline --no-tui \
+  --decompile-all case/sample-full.c
+```
+
+The destination must not already exist. The combined file is created with
+owner-only permissions and begins with input hash, architecture, backend, and
+non-original-source warnings. Discovery remains bounded to 300 functions; “all”
+means every function AIDebug discovered within that explicit safety ceiling.
+
 AIDebug discovers `analyzeHeadless` from `PATH`, common installation locations,
 or `AIDEBUG_GHIDRA_HEADLESS`. It runs one isolated temporary Ghidra project and
 uses Ghidra's native-code decompiler. The C-like result is reconstructed output,
 not original source: inferred types, names, expressions, and structure still
 require analyst review. AIDebug fails clearly when Ghidra is unavailable; it
 does not substitute register-to-text heuristics and call that decompilation.
+
+When remote AI is enabled and a function has Ghidra output, the same bounded AI
+request compares that reconstruction with the supplied disassembly, calls,
+strings, patterns, and optional runtime state. The result is labelled
+`CONSISTENT`, `PARTIAL`, or `CONTRADICTED` with confidence and evidence. This is
+an LLM cross-check, not proof of source correctness. Offline mode reports that
+the available reconstruction was not remotely cross-checked.
+
+### Active local ELF debugging
+
+GDB-backed active mode executes the selected program. Use it only inside an
+isolated analysis VM:
+
+```bash
+aidebug --binary ./sample.elf --mode debug --breakpoint main
+```
+
+Available commands are `break LOCATION`, `continue`, `step`, `next`, `finish`,
+`registers`, `changes`, `io`, `disassemble`, and `quit`. `step` and `next` operate
+at instruction granularity. `io` reports calling-convention register candidates
+and a GDB return value or explicitly labelled ABI return-register candidate.
+Use repeatable `--debug-arg` values for target arguments and repeatable
+`--debug-command` values for non-interactive lab automation. Active mode
+currently supports local ELF targets; use Frida dynamic mode for remote or
+Windows targets. GDB is a system dependency rather than a Python package.
+
+### Learning mode
+
+Learning mode is local, does not open the session database, and never sends
+content to an AI provider:
+
+```bash
+aidebug --learn
+aidebug --learn mov-load
+aidebug --learn "control flow"
+```
+
+The 44 lessons cover data movement, arithmetic, bit operations, shifts,
+branches, string instructions, system/debug instructions, high-level structure
+recovery, Windows API behavior, IAT thunks, and PEB access. Each lesson pairs
+assembly with pseudo-code and explains state effects, analytical clues, and a
+common pitfall.
 
 C source analysis requires an ELF-capable `cc`, `gcc`, or `clang` plus
 Bubblewrap (`bwrap`). AIDebug copies the selected translation unit into a
@@ -200,9 +258,11 @@ flowchart LR
   Source[C source] --> Compile[Sandboxed temporary ELF compilation]
   Compile --> Parse
   Parse --> Disasm[Capstone disassembly]
+  Disasm --> Ghidra[Ghidra reconstruction]
   Disasm --> Patterns[Malware pattern detection]
   Patterns --> Offline[Offline evidence summary]
   Patterns --> Remote[Optional remote AI hypothesis]
+  Ghidra --> Remote
   Remote --> Attack[ATT&CK candidate]
   Offline --> Report[HTML/JSON/YARA candidates]
   Attack --> Report
@@ -223,6 +283,8 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 | Formats | PE32, PE64, ELF, and one-file C source compiled to a temporary ELF |
 | Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
 | Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
+| Active debug | Local ELF execution through GDB/MI with analyst-controlled breakpoints and instruction stepping |
+| Learning | 44 bundled local lessons; x86/x64-centered with Windows-analysis examples |
 | Reports | HTML, versioned AIDebug JSON, and YARA candidates |
 
 ## Safety
@@ -231,7 +293,8 @@ Use AIDebug only in an isolated malware-analysis VM or lab. Do not run unknown
 samples on your host OS. Static analysis can inspect PE/ELF files directly.
 C inputs are compiled inside a Bubblewrap filesystem sandbox and the generated
 ELF is never executed. Dynamic mode attaches Frida to a running process or
-sandbox and should be used only with authorization and isolation.
+sandbox; active debug mode launches a local ELF through GDB. Both dynamic paths
+should be used only with authorization and isolation.
 
 ## Limitations And Honesty
 
@@ -243,6 +306,9 @@ Dynamic static-to-runtime address mapping can be incomplete under ASLR/PIE.
 The optional Ghidra integration produces bounded C-like reconstruction from
 machine code. It is compiler-grade decompiler output, but it is still not
 recovered original source and must be checked against disassembly and behavior.
+An LLM cross-check can identify inconsistencies in the bounded evidence it
+receives, but it cannot prove semantic equivalence or repair missing discovery
+coverage.
 Tracer startup reports whether each observer is ready and how many hooks are
 installed at that moment; a zero count can increase when a watched module loads
 later and is not evidence that any target call was captured.

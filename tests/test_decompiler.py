@@ -3,7 +3,12 @@ from types import SimpleNamespace
 import pytest
 
 import config
-from analysis.decompiler import DecompilerError, GhidraDecompiler
+from analysis.decompiler import (
+    DecompilerError,
+    GhidraDecompiler,
+    render_full_decompilation,
+    write_full_decompilation,
+)
 
 
 def _binary(*, image_base=0):
@@ -72,3 +77,37 @@ def test_ghidra_backend_rejects_invalid_addresses(tmp_path, address):
     backend = GhidraDecompiler(_binary(), executable=_launcher(tmp_path))
     with pytest.raises(ValueError, match="non-negative integers"):
         backend.decompile([address])
+
+
+def test_full_decompilation_combines_functions_and_refuses_overwrite(tmp_path):
+    first = SimpleNamespace(
+        name="main",
+        decompiled_code="int main(void) { return helper(); }",
+        decompile_backend="ghidra",
+        decompile_language="c",
+    )
+    second = SimpleNamespace(
+        name="helper",
+        decompiled_code="int helper(void) { return 7; }",
+        decompile_backend="ghidra",
+        decompile_language="c",
+    )
+    functions = {0x1000: first, 0x1100: second}
+    disassembler = SimpleNamespace(get_function=functions.get)
+    info = SimpleNamespace(
+        filename="sample.elf",
+        sha256="a" * 64,
+        arch="x86-64",
+        bits=64,
+    )
+
+    content = render_full_decompilation(info, disassembler, [0x1000, 0x1100])
+    assert "not recovered original source" in content
+    assert "Function main at 0x1000" in content
+    assert "int helper" in content
+
+    destination = tmp_path / "full.c"
+    assert write_full_decompilation(destination, info, disassembler, [0x1000, 0x1100]) == destination
+    assert destination.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(DecompilerError, match="Refusing to overwrite"):
+        write_full_decompilation(destination, info, disassembler, [0x1000])
