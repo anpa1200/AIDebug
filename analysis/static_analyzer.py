@@ -47,7 +47,7 @@ class BinaryInfo:
     path: str
     filename: str
     sha256: str
-    file_format: str      # 'PE' or 'ELF'
+    file_format: str      # 'PE', 'ELF', or a derived format such as 'C/ELF'
     arch: str             # 'x86', 'x86-64', 'riscv64', etc.
     bits: int             # 32 or 64
     os_target: str        # 'Windows', 'Linux', etc.
@@ -59,6 +59,9 @@ class BinaryInfo:
     strings: list
     all_string_data: dict  # address -> string
     raw_data: bytes = field(default=b'', repr=False)
+    function_symbols: list = field(default_factory=list)
+    analysis_origin: str = 'binary'
+    compiled_sha256: str | None = None
 
     @property
     def text_section(self) -> SectionInfo | None:
@@ -294,6 +297,7 @@ class StaticAnalyzer:
                     ))
 
             export_candidates = set()
+            function_symbol_candidates = set()
             undefined_dynamic_symbols = set()
             executable_ranges = [
                 (section.virtual_address, section.virtual_address + section.virtual_size)
@@ -319,19 +323,24 @@ class StaticAnalyzer:
                         ):
                             undefined_dynamic_symbols.add(sym.name)
                         in_exec = any(start <= address < end for start, end in executable_ranges)
-                        if (
-                            sym.name and address > 0 and in_exec
-                            and symbol_type == 'STT_FUNC'
-                            and binding in {'STB_GLOBAL', 'STB_WEAK'}
-                            and len(export_candidates) < config.MAX_EXPORTS
-                        ):
-                            export_candidates.add((address, sym.name))
+                        if sym.name and address > 0 and in_exec and symbol_type == 'STT_FUNC':
+                            if len(function_symbol_candidates) < config.MAX_FUNCTION_SYMBOLS:
+                                function_symbol_candidates.add((address, sym.name))
+                            if (
+                                binding in {'STB_GLOBAL', 'STB_WEAK'}
+                                and len(export_candidates) < config.MAX_EXPORTS
+                            ):
+                                export_candidates.add((address, sym.name))
                     if scanned_symbols >= config.MAX_SYMBOLS_TO_SCAN:
                         break
 
             exports = [
                 {'name': name, 'address': address, 'ordinal': 0}
                 for address, name in sorted(export_candidates)
+            ]
+            function_symbols = [
+                {'name': name, 'address': address}
+                for address, name in sorted(function_symbol_candidates)
             ]
             imports = []
             if undefined_dynamic_symbols:
@@ -365,6 +374,7 @@ class StaticAnalyzer:
             exports=exports,
             strings=strings,
             all_string_data=string_data,
+            function_symbols=function_symbols,
         )
 
     # ------------------------------------------------------------------

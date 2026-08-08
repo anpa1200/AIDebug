@@ -30,11 +30,16 @@ Depends:
  python3-pyelftools (>= 0.31),
  python3-rich (>= 13),
  python3-textual (>= 0.52)
+Suggests:
+ bubblewrap,
+ gcc
 Description: malware reverse-engineering triage CLI and TUI
  AIDebug performs malware triage and reverse-engineering support for PE and
- ELF binaries. It extracts function-level behavior and emits analyst-review
- outputs such as YARA candidates, heuristic IOC strings inside JSON exports,
- and HTML reports. Optional remote analysis can suggest MITRE ATT&CK mappings.
+ ELF binaries, plus sandboxed temporary-ELF analysis of C source when
+ Bubblewrap and a compiler are installed. It extracts function-level behavior
+ and emits analyst-review outputs such as YARA candidates, heuristic IOC
+ strings inside JSON exports, and HTML reports. Optional remote analysis can
+ suggest MITRE ATT&CK mappings.
  .
  Offline static analysis reads samples without executing them and does not need
  an API key. Anthropic-backed analysis and Frida dynamic tracing are optional

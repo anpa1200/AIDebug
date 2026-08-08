@@ -31,11 +31,42 @@ Review:
 - strings referenced by high-risk functions
 - generated HTML and JSON outputs
 
+### C source triage
+
+With Bubblewrap and an ELF-capable compiler installed, analyze one C
+translation unit without executing it:
+
+```bash
+aidebug --source sample.c --offline --no-tui --report \
+  --db case/source-session.db --out-dir case/reports/
+```
+
+The source is capped at 2 MiB, copied into a filesystem sandbox, compiled into
+a temporary ELF shared object, and removed after parsing. The session keeps the
+source hash and compiled-artifact hash. Local project headers and multi-file
+builds are not supported. Do not use `--mode dynamic` or `--yara` with source
+input.
+
+### Optional pseudo-source view
+
+Request local heuristic pseudo-C or C++-style output during PE, ELF, or C-source
+analysis:
+
+```bash
+aidebug --binary sample.elf --offline --no-tui --decompile
+aidebug --source sample.c --offline --no-tui --decompile cpp
+```
+
+The result is stored per function and appears in the TUI, HTML report, and JSON
+export. Treat it as a readability aid. Confirm control flow and data types in a
+full disassembler/decompiler before relying on it in an investigation.
+
 ## 3. Review Findings
 
 Treat every output as a hypothesis:
 
 - Confirm suspicious functions in a disassembler.
+- Compare any heuristic pseudo-source with the underlying instructions and CFG.
 - Check whether an ATT&CK technique is supported by behavior evidence.
 - Remove weak IOCs and generic strings.
 - Test generated YARA candidates against known-good and known-bad files.

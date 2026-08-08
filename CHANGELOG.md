@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added optional, dependency-free `--decompile [pseudo-c|cpp]` output with
+  bounded per-function reconstruction in the CLI, TUI, SQLite session, HTML
+  report, and JSON export; output is explicitly labeled heuristic rather than
+  recovered original source.
+- Added bounded `.c` source analysis through a Bubblewrap-isolated, temporary
+  ELF compilation path that never executes the generated artifact; source
+  provenance and compiled-artifact hashes are retained in sessions and reports.
+- Expanded ELF function discovery to retain named local function symbols in
+  addition to entry-point, call-target, and exported-function seeds.
 - Added fail-closed release metadata, dependency, package-content, wheel smoke,
   lint, test, Bandit, dependency-audit, and secret-scan gates.
 - Hardened PyPI publishing so an exact version-matched release tag is tested,

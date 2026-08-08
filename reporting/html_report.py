@@ -211,6 +211,15 @@ a:hover { text-decoration: underline; }
 .disasm-mnem.pop   { color: #79c0ff; }
 .disasm-mnem.other { color: #c9d1d9; }
 .disasm-ops  { color: #8b949e; }
+.pseudo-warning {
+    color: #d29922; font-size: 12px; margin: 4px 0 8px;
+}
+.pseudo-code {
+    background: #0d1117; border: 1px solid #21262d;
+    border-radius: 6px; overflow: auto; padding: 12px 14px;
+    color: #c9d1d9; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px; line-height: 1.55; white-space: pre; tab-size: 4;
+}
 
 /* ---- Risk badge colors ---- */
 .badge-CRITICAL { background: #3d0e0e; color: #f85149; border: 1px solid #6e1a1a; }
@@ -322,6 +331,9 @@ class HTMLReporter:
         sha256     = _esc(session.get('sha256', ''))
         arch       = _esc(f"{session.get('arch', '?')} {session.get('bits', '?')}-bit")
         os_target  = _esc(session.get('os_target', '?'))
+        file_format = _esc(session.get('file_format', '?'))
+        analysis_origin = _esc(session.get('analysis_origin', 'binary'))
+        compiled_sha256 = _esc(session.get('compiled_sha256', ''))
         created_at = _esc(session.get('created_at', ''))
         generated  = _esc(datetime.now().strftime('%Y-%m-%d %H:%M'))
         session_id = _esc(session.get("id", "?"))
@@ -333,7 +345,10 @@ class HTMLReporter:
             <div class="meta-card"><div class="label">File</div><div class="value">{filename}</div></div>
             <div class="meta-card"><div class="label">Architecture</div><div class="value">{arch}</div></div>
             <div class="meta-card"><div class="label">OS Target</div><div class="value">{os_target}</div></div>
+            <div class="meta-card"><div class="label">Format</div><div class="value">{file_format}</div></div>
+            <div class="meta-card"><div class="label">Analysis Origin</div><div class="value">{analysis_origin}</div></div>
             <div class="meta-card"><div class="label">SHA-256</div><div class="value" style="font-family:monospace;font-size:11px">{sha256[:32]}...</div></div>
+            {f'<div class="meta-card"><div class="label">Compiled Artifact SHA-256</div><div class="value" style="font-family:monospace;font-size:11px">{compiled_sha256[:32]}...</div></div>' if compiled_sha256 else ''}
             <div class="meta-card"><div class="label">Functions Analyzed</div><div class="value">{len(traces)}</div></div>
             <div class="meta-card"><div class="label">API Calls</div><div class="value">{len(api_calls)}</div></div>
             <div class="meta-card"><div class="label">Network Events</div><div class="value">{len(network_events)}</div></div>
@@ -360,6 +375,8 @@ class HTMLReporter:
             ai        = _json_object(trace.get('ai_analysis_json'))
             risk      = _risk_level(trace.get('risk_level') or ai.get('risk_level'))
             disasm    = trace.get('disassembly') or ''
+            decompiled_code = trace.get('decompiled_code') or ''
+            decompile_language = trace.get('decompile_language') or 'pseudo-c'
 
             name      = _esc(ai.get('suggested_name') or trace.get('name') or f'sub_{addr:08x}')
             summary   = _esc(ai.get('summary', ''))
@@ -403,6 +420,16 @@ class HTMLReporter:
             ret_html   = f'<div class="notes-box">{ret_val}</div>' if ret_val else ''
 
             disasm_html = self._render_disasm(disasm)
+            decompile_html = ''
+            if decompiled_code:
+                decompile_html = (
+                    '<div class="section-title">Heuristic Pseudo-source '
+                    f'({_esc(decompile_language)})</div>'
+                    '<div class="pseudo-warning">Reconstructed from machine code; '
+                    'this is not original source and may contain inaccurate types, names, '
+                    'expressions, or control flow.</div>'
+                    f'<pre class="pseudo-code">{_esc(decompiled_code)}</pre>'
+                )
             cfg_html     = self._render_cfg_svg(addr, disassembler, disasm)
             patterns = []
             if store and session.get("id") is not None:
@@ -434,6 +461,8 @@ class HTMLReporter:
                 {notes_html}
 
                 {patterns_html}
+
+                {decompile_html}
 
                 <div class="section-title">Control Flow Graph</div>
                 {cfg_html}

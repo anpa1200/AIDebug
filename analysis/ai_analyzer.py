@@ -249,10 +249,17 @@ class AIAnalyzer:
         artifact = {
             'binary': {
                 'filename': self._clean_text(info.filename, 512),
+                'format': self._clean_text(info.file_format, 128),
                 'architecture': self._clean_text(info.arch, 128),
                 'bits': info.bits,
                 'os_target': self._clean_text(info.os_target, 128),
                 'sha256': self._clean_text(info.sha256, 128),
+                'analysis_origin': self._clean_text(
+                    getattr(info, 'analysis_origin', 'binary'), 256
+                ),
+                'compiled_artifact_sha256': self._clean_text(
+                    getattr(info, 'compiled_sha256', '') or '', 128
+                ),
                 'imports': [
                     {
                         'module': self._clean_text(imp.dll, 256),

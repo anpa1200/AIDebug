@@ -15,6 +15,8 @@ confirm package names but cannot validate a Kali build.
 - `pybuild-plugin-pyproject`
 - `dh-python`
 - `debhelper-compat`
+- `bubblewrap` and `gcc` are suggested system packages for the optional `.c`
+  to temporary-ELF source-analysis path; the generated artifact is never run.
 
 The Debian control file uses versioned relationships so an incompatible target
 fails dependency resolution rather than producing a package with unsupported

@@ -35,6 +35,7 @@ REQUIRED_SDIST_SUFFIXES = {
     "examples/mock-output/aidebug-candidate.yar",
     "examples/mock-output/aidebug-report.html",
     "examples/mock-output/aidebug-session.json",
+    "examples/toy_c_analysis.c",
     "requirements-ai.txt",
     "requirements-dynamic.txt",
     "requirements.txt",

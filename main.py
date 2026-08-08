@@ -4,6 +4,9 @@ AIDebug — AI-Assisted Malware Debugger
 Usage:
     python main.py --binary <path>                    # static analysis + TUI
     python main.py --binary <path> --no-tui           # CLI mode (print to stdout)
+    python main.py --binary <path> --decompile         # add heuristic pseudo-C
+    python main.py --binary <path> --decompile cpp     # add C++-style reconstruction
+    python main.py --source <path.c> --offline         # compile to temporary ELF + analyze
     python main.py --binary <path> --pid 1234         # dynamic mode (attach Frida)
     python main.py --list-sessions                    # show past analysis sessions
     python main.py --session 1 --report               # HTML report for session 1
@@ -68,6 +71,20 @@ def _terminal_text(value: Any, limit: int = 500) -> str:
     return "".join(rendered)
 
 
+def _terminal_multiline_text(value: Any, limit: int = 12_000) -> str:
+    """Preserve line breaks while neutralizing untrusted terminal controls."""
+    raw = str(value)[:limit]
+    rendered = []
+    for character in raw:
+        if character in "\n\t" or character.isprintable():
+            rendered.append(character)
+        elif ord(character) <= 0xFF:
+            rendered.append(f"\\x{ord(character):02x}")
+        else:
+            rendered.append(f"\\u{ord(character):04x}")
+    return "".join(rendered)
+
+
 def _report_stem(filename: Any, session_id: int) -> str:
     """Return a short basename suitable for report files.
 
@@ -82,11 +99,29 @@ def _report_stem(filename: Any, session_id: int) -> str:
 
 def load_binary(path: str, *, max_functions: int | None = None):
     """Run static analysis and disassembly. Returns (binary_info, disassembler, func_addresses)."""
-    from analysis import Disassembler, StaticAnalyzer
+    from analysis import StaticAnalyzer
 
     print(f"[*] Loading: {_terminal_text(path)}")
     analyzer = StaticAnalyzer()
     info = analyzer.analyze(path)
+    return _prepare_static_analysis(info, max_functions=max_functions)
+
+
+def load_c_source(path: str, *, max_functions: int | None = None):
+    """Compile C to a temporary, non-executed ELF and run static analysis."""
+    from analysis import CSourceAnalyzer
+
+    print(f"[*] Loading C source: {_terminal_text(path)}")
+    print("[*] Compiling a temporary ELF analysis artifact (the artifact will not be executed)…")
+    info = CSourceAnalyzer().analyze(path)
+    if info.compiled_sha256:
+        print(f"[*] Compiled artifact SHA-256: {info.compiled_sha256}")
+    return _prepare_static_analysis(info, max_functions=max_functions)
+
+
+def _prepare_static_analysis(info, *, max_functions: int | None = None):
+    """Describe, disassemble, and enrich an already parsed static artifact."""
+    from analysis import Disassembler
 
     print(
         f"[*] Format   : {_terminal_text(info.file_format)} "
@@ -112,6 +147,27 @@ def load_binary(path: str, *, max_functions: int | None = None):
     print(f"[*] Found {len(addresses)} functions{cap_note}.")
 
     return info, dis, addresses
+
+
+def decompile_functions(binary_info, disassembler, addresses, language: str) -> int:
+    """Attach bounded heuristic pseudo-source to discovered functions."""
+    from analysis import PseudoDecompiler
+
+    renderer = PseudoDecompiler(binary_info, disassembler, language=language)
+    generated = 0
+    for address in addresses:
+        function = disassembler.get_function(address)
+        if not function or not function.instructions:
+            continue
+        result = renderer.decompile(function)
+        function.decompiled_code = result.code
+        function.decompile_language = result.language
+        generated += 1
+    print(
+        f"[*] Generated {generated} heuristic {_terminal_text(language, 24)} "
+        "function reconstruction(s); output is not original source."
+    )
+    return generated
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +242,13 @@ def run_cli(binary_info, disassembler, addresses, store, session_id, analyzer):
             print(f"           → {_terminal_text(analysis.summary, 120)}")
             if analysis.mitre_technique:
                 print(f"           → MITRE: {_terminal_text(analysis.mitre_technique, 160)}")
+
+        if getattr(func, "decompiled_code", ""):
+            language = _terminal_text(getattr(func, "decompile_language", "pseudo-c"), 24)
+            print(
+                f"\n--- Heuristic decompilation: 0x{addr:08x} ({language}) ---\n"
+                f"{_terminal_multiline_text(func.decompiled_code, config.MAX_DECOMPILED_CHARS)}\n"
+            )
 
     # Summary
     summary = store.get_risk_summary(session_id)
@@ -598,6 +661,11 @@ def _build_parser() -> argparse.ArgumentParser:
         version=f"AIDebug {config.APP_VERSION}",
     )
     parser.add_argument("--binary",         help="Path to binary (PE or ELF)")
+    parser.add_argument(
+        "--source",
+        metavar="PATH.c",
+        help="Path to C source; compile to a temporary, non-executed ELF for static analysis",
+    )
     parser.add_argument("--mode",           choices=["static", "dynamic"], default="static",
                         help="Analysis mode (default: static)")
     parser.add_argument("--pid",            type=_positive_int, help="PID to attach (dynamic mode)")
@@ -605,6 +673,17 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Remote frida-server host[:port] (e.g. 192.168.56.101 or 192.168.56.101:27042). "
                              "Use this to attach to a VM/sandbox while keeping API traffic on the host.")
     parser.add_argument("--no-tui",         action="store_true", help="CLI output, no TUI")
+    parser.add_argument(
+        "--decompile",
+        nargs="?",
+        const="pseudo-c",
+        choices=["pseudo-c", "cpp"],
+        metavar="LANGUAGE",
+        help=(
+            "Generate bounded heuristic pseudo-source for each function; "
+            "LANGUAGE is pseudo-c (default) or cpp"
+        ),
+    )
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
     parser.add_argument("--session",        type=_positive_int, help="Session ID for reporting commands")
     parser.add_argument("--report",         action="store_true", help="Generate HTML report")
@@ -648,6 +727,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     wants_report = args.report or args.yara or args.json_export
+    selected_input = args.binary or args.source
+    decompile = getattr(args, "decompile", None)
+    if args.binary and args.source:
+        parser.error("--binary and --source are mutually exclusive")
     if args.offline and args.accept_ai_cost:
         parser.error("--offline cannot be combined with --accept-ai-cost")
     if args.max_functions > config.MAX_FUNCTIONS_TO_DISCOVER:
@@ -659,6 +742,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     if args.list_sessions:
         conflicting = (
             args.binary
+            or args.source
             or args.session
             or wants_report
             or args.mode != "static"
@@ -668,6 +752,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or args.offline
             or args.accept_ai_cost
             or args.out_dir != "."
+            or decompile
         )
         if conflicting:
             parser.error("--list-sessions cannot be combined with analysis or reporting options")
@@ -675,30 +760,41 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
 
     if args.session and not wants_report:
         parser.error("--session requires --report, --yara, or --json-export")
-    if args.no_tui and not args.binary:
-        parser.error("--no-tui applies only to binary analysis")
-    if args.binary and args.session:
-        parser.error("--session selects an existing session and cannot be combined with --binary")
+    if args.no_tui and not selected_input:
+        parser.error("--no-tui applies only to file analysis")
+    if decompile and not selected_input:
+        parser.error("--decompile requires --binary or --source")
+    if selected_input and args.session:
+        parser.error("--session selects an existing session and cannot be combined with file analysis")
     if (args.pid or args.frida_host) and args.mode != "dynamic":
         parser.error("--pid and --frida-host require --mode dynamic")
+    if args.source and args.mode == "dynamic":
+        parser.error("--source supports static analysis only; compiled source is never executed")
     if args.mode == "dynamic" and not args.binary:
         parser.error("--mode dynamic requires --binary")
+    if args.source and args.yara:
+        parser.error(
+            "--yara is unavailable for C source because analysis uses a temporary compiled artifact"
+        )
     if args.out_dir != "." and not wants_report:
         parser.error("--out-dir requires --report, --yara, or --json-export")
-    if args.accept_ai_cost and not args.binary and not args.yara:
-        parser.error("--accept-ai-cost has no effect without binary analysis or --yara")
+    if args.accept_ai_cost and not selected_input and not args.yara:
+        parser.error("--accept-ai-cost has no effect without file analysis or --yara")
 
-    if not args.binary and not wants_report:
-        parser.error("choose --binary, --list-sessions, or a reporting command")
+    if not selected_input and not wants_report:
+        parser.error("choose --binary, --source, --list-sessions, or a reporting command")
 
-    if args.binary:
-        binary_path = Path(args.binary).expanduser()
-        if not binary_path.exists():
-            parser.error(f"binary not found: {_terminal_text(args.binary)}")
-        if not binary_path.is_file():
-            parser.error(f"binary is not a regular file: {_terminal_text(args.binary)}")
-        if not os.access(binary_path, os.R_OK):
-            parser.error(f"binary is not readable: {_terminal_text(args.binary)}")
+    if selected_input:
+        input_kind = "source" if args.source else "binary"
+        input_path = Path(selected_input).expanduser()
+        if not input_path.exists():
+            parser.error(f"{input_kind} not found: {_terminal_text(selected_input)}")
+        if not input_path.is_file():
+            parser.error(f"{input_kind} is not a regular file: {_terminal_text(selected_input)}")
+        if not os.access(input_path, os.R_OK):
+            parser.error(f"{input_kind} is not readable: {_terminal_text(selected_input)}")
+        if args.source and input_path.suffix.lower() != ".c":
+            parser.error("--source accepts files with the .c extension")
 
         is_bulk = args.mode == "dynamic" or args.no_tui or wants_report
         if is_bulk and not args.offline and not args.accept_ai_cost:
@@ -729,7 +825,9 @@ def _execute(args) -> int:
         wants_report = args.report or args.yara or args.json_export
         analyzer = None
         prepared_binary = None
-        if args.binary:
+        source_argument = getattr(args, "source", None)
+        selected_input = args.binary or source_argument
+        if selected_input:
             analyzer = _make_analyzer(args.offline)
             bulk_analysis = args.mode == "dynamic" or args.no_tui or wants_report
             discovery_limit = args.max_functions if bulk_analysis else None
@@ -738,10 +836,16 @@ def _execute(args) -> int:
                     args.max_functions,
                     config.MAX_DYNAMIC_FUNCTION_HOOKS,
                 )
-            prepared_binary = load_binary(
-                os.fspath(Path(args.binary).expanduser()),
-                max_functions=discovery_limit,
-            )
+            if source_argument:
+                prepared_binary = load_c_source(
+                    os.fspath(Path(source_argument).expanduser()),
+                    max_functions=discovery_limit,
+                )
+            else:
+                prepared_binary = load_binary(
+                    os.fspath(Path(args.binary).expanduser()),
+                    max_functions=discovery_limit,
+                )
 
         store = TraceStore(args.db)
 
@@ -751,7 +855,7 @@ def _execute(args) -> int:
 
         # Reporting only (no binary) works against a stored session.  YARA is
         # deterministic unless the caller explicitly acknowledges remote use.
-        if wants_report and not args.binary:
+        if wants_report and not selected_input:
             session_id = args.session
             if session_id is None:
                 sessions = store.list_sessions()
@@ -772,8 +876,16 @@ def _execute(args) -> int:
             return 0 if completed else 1
 
         if analyzer is None or prepared_binary is None:
-            raise CLIError("Binary analysis was not initialized")
+            raise CLIError("File analysis was not initialized")
         binary_info, disassembler, addresses = prepared_binary
+        decompile_language = getattr(args, "decompile", None)
+        if decompile_language:
+            decompile_functions(
+                binary_info,
+                disassembler,
+                addresses,
+                decompile_language,
+            )
         session_id = store.create_session(binary_info)
         print(f"[*] Session ID: {session_id}")
 

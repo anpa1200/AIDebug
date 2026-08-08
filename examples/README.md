@@ -8,6 +8,8 @@ testing, and demonstrations.
 - `toy_xor_config.py` - benign toy source that demonstrates the kind of XOR loop
   AIDebug is designed to flag in real malware. It does not exploit, persist,
   evade, or connect to anything.
+- `toy_c_analysis.c` - benign C fixture for the temporary ELF source-analysis
+  path. The compiled artifact is analyzed but never executed.
 - `mock-output/aidebug-session.json` - hand-authored, schema-v2 example of an
   offline mock session. Its all-zero hash and redacted path are deliberate.
 - `mock-output/aidebug-candidate.yar` - illustrative analyst-review YARA seed.
@@ -24,6 +26,12 @@ To run the toy source:
 
 ```bash
 python examples/toy_xor_config.py
+```
+
+To analyze the C fixture locally:
+
+```bash
+aidebug --source examples/toy_c_analysis.c --offline --no-tui --max-functions 2
 ```
 
 To run AIDebug on a real sample, use an isolated malware-analysis VM or lab.

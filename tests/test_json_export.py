@@ -12,6 +12,9 @@ def test_json_export_builds_risk_summary_and_iocs():
         "arch": "x86-64",
         "bits": 64,
         "os_target": "windows",
+        "file_format": "PE",
+        "analysis_origin": "binary",
+        "compiled_sha256": "",
         "created_at": "2026-06-15T00:00:00Z",
     }
     traces = [
@@ -24,6 +27,8 @@ def test_json_export_builds_risk_summary_and_iocs():
             "strings_referenced": json.dumps(["c2.example.test", ".text"]),
             "calls_to": json.dumps([0x402000]),
             "called_from": json.dumps([]),
+            "decompiled_code": "uintptr_t decode_config(void) { return rax; }",
+            "decompile_language": "pseudo-c",
             "ai_analysis_json": json.dumps(
                 {
                     "summary": "Decodes configuration data",
@@ -90,6 +95,8 @@ def test_json_export_builds_risk_summary_and_iocs():
 
     assert doc["_schema"] == "aidebug/session/v2"
     assert doc["summary"]["highest_risk"] == "HIGH"
+    assert doc["binary"]["format"] == "PE"
+    assert doc["binary"]["analysis_origin"] == "binary"
     assert doc["summary"]["mitre_techniques"] == {"T1027": 1}
     assert doc["summary"]["api_calls_logged"] == 1
     assert doc["summary"]["network_events_logged"] == 1
@@ -98,6 +105,8 @@ def test_json_export_builds_risk_summary_and_iocs():
     assert doc["functions"][0]["name"] == "decode_config"
     assert doc["functions"][0]["size_bytes"] is None
     assert doc["functions"][0]["deterministic_patterns"][0]["severity"] == "HIGH"
+    assert doc["functions"][0]["decompilation"]["confidence"] == "heuristic"
+    assert "decode_config" in doc["functions"][0]["decompilation"]["code"]
     assert doc["network_events"][0]["ip"] == "203.0.113.8"
     assert doc["runtime_events"][0]["payload"]["confidence"] == "heuristic"
     assert doc["runtime_events"][0]["timestamp"] == "2026-06-15T00:02:00Z"

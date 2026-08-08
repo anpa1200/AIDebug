@@ -20,6 +20,15 @@ sandbox target and should only be used:
 - against samples the analyst is permitted to examine
 - with network controls appropriate to the investigation
 
+C source analysis is static preparation, not dynamic execution. AIDebug copies
+one selected `.c` file into a temporary directory, invokes an allowlisted local
+compiler inside a Bubblewrap filesystem sandbox, verifies that the result is
+ELF, parses it, and deletes it. The compiled artifact is never launched.
+Bubblewrap is mandatory because preprocessors and inline assembly can otherwise
+read unrelated host files. The sandbox exposes compiler/runtime paths, device
+nodes, a private temporary filesystem, and the copied source only; project-local
+headers and multi-file builds are intentionally outside the current boundary.
+
 ## AI Output Boundaries
 
 AI-generated analysis is not authoritative. AIDebug output should be treated as:
@@ -72,12 +81,18 @@ payload capture, register/stack context, and other runtime evidence.
 
 ### Operational bounds
 
-Current source defaults reject inputs that are not readable regular files or
-that exceed 128 MiB. Extraction is capped at 100,000 strings with 4,096
+Current source defaults reject inputs that are not readable regular files.
+Binary inputs are capped at 128 MiB. C inputs are capped at 2 MiB and 30 seconds
+of sandboxed compilation; dynamic execution and YARA generation are disabled
+for source inputs. Extraction is capped at 100,000 strings with 4,096
 characters per string. Symbol-table scanning is capped at 100,000 records, with
 at most 50,000 import and 50,000 export candidates retained. Discovery is capped
 at 300 function candidates and 250 instructions per function; bulk CLI analysis
 defaults to 25 selected functions.
+Optional pseudo-source is capped at 12,000 characters per function. It is a
+deterministic instruction translation with explicit uncertainty, not recovered
+original C/C++: types, names, expressions, and structured control flow can be
+wrong. The underlying disassembly remains the primary local evidence.
 Dynamic instrumentation uses the lower of `--max-functions` and a 50-function
 hook ceiling. Script readiness and hook errors are surfaced by the CLI. A
 zero-hook observer may be waiting for a watched module to load and must not be
@@ -98,7 +113,8 @@ case retention/deletion policy described above.
 ### Analytical limits
 
 Function discovery is bounded recursive descent from entry and exported
-function candidates, not exhaustive whole-binary recovery. Indirect calls,
+function candidates, plus named local ELF function symbols when present; it is
+not exhaustive whole-binary recovery. Indirect calls,
 stripped or unreachable code, overlays, packed code, unusual compiler output,
 and unsupported architecture details may be missed. Static virtual addresses
 may not equal runtime addresses when ASLR, PIE, or rebasing applies; analysts
