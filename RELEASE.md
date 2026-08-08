@@ -2,7 +2,7 @@
 
 This checklist keeps AIDebug releases reviewer-friendly and package-ready.
 The public v1.1.0 artifacts are historical and immutable. The source tree is
-prepared as v1.3.0; its package is not public until an exact `v1.3.0` tag and
+prepared as v1.3.1; its package is not public until an exact `v1.3.1` tag and
 GitHub release complete the verified publishing workflow.
 
 ## Pre-Release

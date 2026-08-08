@@ -1,3 +1,10 @@
+aidebug (1.3.1-0kali1) kali-dev; urgency=medium
+
+  * Replace static learning examples with live compiled ELF analysis.
+  * Show complete real assembly and Ghidra pseudo-code for 44 functions.
+
+ -- Andrey Pautov <1200km@gmail.com>  Sat, 08 Aug 2026 19:15:00 +0300
+
 aidebug (1.3.0-0kali1) kali-dev; urgency=medium
 
   * Add full-program reconstruction with LLM cross-checks.

@@ -133,15 +133,27 @@ The target executes, so use a disposable, network-controlled VM.
 
 ## 5. Learning Mode
 
-List all 44 bundled lessons or open/search a topic without loading a sample:
+List or search the 44 bundled real-function lessons without creating an
+artifact:
 
 ```bash
 aidebug --learn
-aidebug --learn xor-decoder
-aidebug --learn "Windows behavior"
+aidebug --learn "loops and arrays"
 ```
 
-Learning mode is local-only and does not create a session database.
+Open an exact lesson to compile its trusted C function into a temporary,
+non-executed ELF, decode the complete symbol through AIDebug, and reconstruct
+pseudo-code through Ghidra:
+
+```bash
+aidebug --learn subtract
+aidebug --learn switch-dispatch
+```
+
+Learning Mode is local-only and does not create a session database. Exact
+lessons require an ELF compiler and Ghidra. Output includes the source function,
+compiler and artifact provenance, real instruction bytes, and Ghidra's explicit
+non-original-source warning; it never substitutes handwritten pseudo-code.
 
 ## 6. Export And Handoff
 

@@ -14,7 +14,7 @@ Malware reverse-engineering CLI/TUI with deterministic offline triage, Ghidra
 reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning, ATT&CK candidates, YARA seeds, and analyst reports.
 
-> **Release status:** the source tree is the AIDebug v1.3.0 candidate. Until a
+> **Release status:** the source tree is the AIDebug v1.3.1 candidate. Until a
 > matching release is tagged and published, PyPI continues to serve historical
 > v1.1.0; install from this repository for the current feature set.
 
@@ -69,7 +69,7 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | Full reconstruction file | One provenance-marked C-like file for every discovered function |
 | LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
 | Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
-| Learning mode | 44 local assembly, structure-recovery, and Windows-analysis lessons |
+| Live Learning Mode | 44 real C functions compiled to ELF, disassembled by AIDebug, and reconstructed by Ghidra |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -148,20 +148,32 @@ Windows targets. GDB is a system dependency rather than a Python package.
 
 ### Learning mode
 
-Learning mode is local, does not open the session database, and never sends
-content to an AI provider:
+Learning Mode is local, does not open the session database, and never sends
+content to an AI provider. Listing and searching do not compile anything:
 
 ```bash
 aidebug --learn
-aidebug --learn mov-load
-aidebug --learn "control flow"
+aidebug --learn subtract
+aidebug --learn "loops and arrays"
 ```
 
-The 44 lessons cover data movement, arithmetic, bit operations, shifts,
-branches, string instructions, system/debug instructions, high-level structure
-recovery, Windows API behavior, IAT thunks, and PEB access. Each lesson pairs
-assembly with pseudo-code and explains state effects, analytical clues, and a
-common pitfall.
+Opening an exact lesson compiles one of 44 bundled, safe C functions into a
+temporary ELF shared object. That artifact is never loaded or executed.
+AIDebug resolves the real symbol and its size, decodes the complete
+compiler-generated function with addresses and instruction bytes, and asks the
+same Ghidra backend used by normal analysis to reconstruct pseudo-code from the
+machine code. The lesson shows the actual compiled source function, compiler
+identity, artifact SHA-256, symbol address, real assembly, Ghidra output, and
+the non-original-source warning. There is no handwritten pseudo-code fallback.
+
+Exact lessons require an ELF-capable `cc`, `gcc`, or `clang` and Ghidra's
+`analyzeHeadless`. Override discovery when necessary:
+
+```bash
+aidebug --learn switch-dispatch \
+  --learning-compiler /usr/bin/gcc \
+  --ghidra-headless /opt/ghidra/support/analyzeHeadless
+```
 
 C source analysis requires an ELF-capable `cc`, `gcc`, or `clang` plus
 Bubblewrap (`bwrap`). AIDebug copies the selected translation unit into a

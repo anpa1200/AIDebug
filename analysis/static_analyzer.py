@@ -325,7 +325,9 @@ class StaticAnalyzer:
                         in_exec = any(start <= address < end for start, end in executable_ranges)
                         if sym.name and address > 0 and in_exec and symbol_type == 'STT_FUNC':
                             if len(function_symbol_candidates) < config.MAX_FUNCTION_SYMBOLS:
-                                function_symbol_candidates.add((address, sym.name))
+                                function_symbol_candidates.add(
+                                    (address, sym.name, int(sym['st_size']))
+                                )
                             if (
                                 binding in {'STB_GLOBAL', 'STB_WEAK'}
                                 and len(export_candidates) < config.MAX_EXPORTS
@@ -339,8 +341,8 @@ class StaticAnalyzer:
                 for address, name in sorted(export_candidates)
             ]
             function_symbols = [
-                {'name': name, 'address': address}
-                for address, name in sorted(function_symbol_candidates)
+                {'name': name, 'address': address, 'size': size}
+                for address, name, size in sorted(function_symbol_candidates)
             ]
             imports = []
             if undefined_dynamic_symbols:

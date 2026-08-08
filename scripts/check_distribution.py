@@ -16,6 +16,8 @@ REQUIRED_WHEEL_SUFFIXES = {
     "debugger/scripts/tracer.js",
     "debugger/scripts/unpack_detector.js",
     "learning/catalog.py",
+    "learning/functions.c",
+    "learning/live.py",
     "learning/renderer.py",
 }
 REQUIRED_SDIST_SUFFIXES = {
@@ -43,6 +45,8 @@ REQUIRED_SDIST_SUFFIXES = {
     "examples/mock-output/aidebug-session.json",
     "examples/toy_c_analysis.c",
     "learning/catalog.py",
+    "learning/functions.c",
+    "learning/live.py",
     "learning/renderer.py",
     "requirements-ai.txt",
     "requirements-dynamic.txt",

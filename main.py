@@ -193,14 +193,36 @@ def write_full_decompilation(binary_info, disassembler, addresses, destination: 
     return path
 
 
-def run_learning(topic: str) -> int:
-    """Render the local, network-free reverse-engineering lesson catalog."""
-    from learning import find_lessons, get_lesson, render_catalog, render_lesson
+def run_learning(
+    topic: str,
+    *,
+    compiler: str | None = None,
+    ghidra_headless: str | None = None,
+) -> int:
+    """Compile and analyze a trusted lesson function without executing it."""
+    from learning import (
+        LearningAnalysisError,
+        LiveLearningAnalyzer,
+        find_lessons,
+        get_lesson,
+        render_catalog,
+        render_lesson,
+    )
 
     normalized = (topic or "list").strip().lower()
     exact = get_lesson(normalized)
     if exact is not None:
-        render_lesson(exact)
+        print(f"[*] Compiling trusted learning function: {_terminal_text(exact.function_name)}")
+        print("[*] The temporary ELF artifact will be analyzed and will not be executed.")
+        print("[*] Recovering real machine instructions and Ghidra pseudo-code…")
+        try:
+            result = LiveLearningAnalyzer(
+                compiler=compiler,
+                ghidra_headless=ghidra_headless,
+            ).analyze(exact)
+        except LearningAnalysisError as exc:
+            raise CLIError(str(exc)) from exc
+        render_lesson(result)
         return 0
     matches = find_lessons(normalized)
     if not matches:
@@ -932,7 +954,12 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         const="list",
         metavar="TOPIC",
-        help="List local lessons or open/search a reverse-engineering topic",
+        help="List lessons or compile/decompile one real learning function",
+    )
+    parser.add_argument(
+        "--learning-compiler",
+        metavar="PATH",
+        help="ELF-capable compiler used for --learn (default: cc, gcc, or clang)",
     )
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
     parser.add_argument("--session",        type=_positive_int, help="Session ID for reporting commands")
@@ -982,6 +1009,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     decompile_all = getattr(args, "decompile_all", None)
     ghidra_headless = getattr(args, "ghidra_headless", None)
     learn = getattr(args, "learn", None)
+    learning_compiler = getattr(args, "learning_compiler", None)
     debug_options = bool(
         getattr(args, "breakpoint", [])
         or getattr(args, "debug_arg", [])
@@ -1004,12 +1032,13 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or args.db != config.DB_PATH
             or decompile
             or decompile_all
-            or ghidra_headless
             or debug_options
         )
         if conflicting:
             parser.error("--learn cannot be combined with analysis, debug, or reporting options")
         return
+    if learning_compiler:
+        parser.error("--learning-compiler requires --learn")
     if args.binary and args.source:
         parser.error("--binary and --source are mutually exclusive")
     if args.offline and args.accept_ai_cost:
@@ -1117,7 +1146,11 @@ def _execute(args) -> int:
     store = None
     try:
         if getattr(args, "learn", None) is not None:
-            return run_learning(args.learn)
+            return run_learning(
+                args.learn,
+                compiler=getattr(args, "learning_compiler", None),
+                ghidra_headless=getattr(args, "ghidra_headless", None),
+            )
 
         wants_report = args.report or args.yara or args.json_export
         analyzer = None
