@@ -47,26 +47,35 @@ source hash and compiled-artifact hash. Local project headers and multi-file
 builds are not supported. Do not use `--mode dynamic` or `--yara` with source
 input.
 
-### Optional pseudo-source view
+Ubuntu 24.04 can deny Bubblewrap's UID mapping when AppArmor's unprivileged
+user-namespace restriction is enabled but no Bubblewrap profile is loaded. In
+that case, install and load AppArmor's `bwrap-userns-restrict` profile. Keep the
+global restriction enabled; disabling it weakens protection for every
+unconfined application on the host.
 
-Request local heuristic pseudo-C or C++-style output during PE, ELF, or C-source
-analysis:
+### Optional decompiler view
+
+Request local Ghidra C-like output during PE, ELF, or C-source analysis:
 
 ```bash
 aidebug --binary sample.elf --offline --no-tui --decompile
-aidebug --source sample.c --offline --no-tui --decompile cpp
+aidebug --source sample.c --offline --no-tui --decompile \
+  --ghidra-headless /opt/ghidra/support/analyzeHeadless
 ```
 
-The result is stored per function and appears in the TUI, HTML report, and JSON
-export. Treat it as a readability aid. Confirm control flow and data types in a
-full disassembler/decompiler before relying on it in an investigation.
+Ghidra must be installed and its `support/analyzeHeadless` launcher available on
+`PATH`, in a common installation location, via `AIDEBUG_GHIDRA_HEADLESS`, or via
+`--ghidra-headless`. The result is stored per function and appears in the TUI,
+HTML report, and JSON export. It is reconstructed C-like code rather than the
+original source, so confirm control flow and inferred data types against the
+underlying instructions before relying on it in an investigation.
 
 ## 3. Review Findings
 
 Treat every output as a hypothesis:
 
 - Confirm suspicious functions in a disassembler.
-- Compare any heuristic pseudo-source with the underlying instructions and CFG.
+- Compare decompiler reconstruction with the underlying instructions and CFG.
 - Check whether an ATT&CK technique is supported by behavior evidence.
 - Remove weak IOCs and generic strings.
 - Test generated YARA candidates against known-good and known-bad files.

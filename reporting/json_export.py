@@ -126,15 +126,16 @@ class JSONExporter:
                 "strings_referenced": strings_referenced,
                 "deterministic_patterns": patterns_by_address.get(address, []),
 
-                # Optional bounded heuristic reconstruction. This is derived
-                # output, not recovered original source.
+                # Optional bounded output from a native-code decompiler. This
+                # is reconstructed C-like text, not recovered original source.
                 "decompilation": {
-                    "language": self._text(trace.get("decompile_language") or "pseudo-c"),
-                    "confidence": "heuristic",
-                    "warning": (
+                    "language": self._text(trace.get("decompile_language") or "c"),
+                    "backend": self._text(trace.get("decompile_backend") or "ghidra"),
+                    "confidence": "reconstructed",
+                    "warning": self._text(trace.get("decompile_warning") or (
                         "Reconstructed from machine code; not original source. "
-                        "Types, names, expressions, and control flow may be inaccurate."
-                    ),
+                        "Types, names, and structure require analyst review."
+                    )),
                     "code": self._text(trace.get("decompiled_code")),
                 } if trace.get("decompiled_code") else None,
 

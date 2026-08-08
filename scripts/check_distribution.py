@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 REQUIRED_WHEEL_SUFFIXES = {
+    "analysis/data/AIDebugDecompile.java",
     "analysis/data/flirt_sigs.json",
     "debugger/scripts/network_tracer.js",
     "debugger/scripts/tracer.js",
@@ -21,6 +22,7 @@ REQUIRED_SDIST_SUFFIXES = {
     "RELEASE.md",
     "SECURITY.md",
     "analysis/data/flirt_sigs.json",
+    "analysis/data/AIDebugDecompile.java",
     "assets/screenshots/README.md",
     "assets/screenshots/behavioral-patterns-tab.png",
     "assets/screenshots/control-flow-graph.png",

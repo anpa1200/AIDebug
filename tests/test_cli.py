@@ -12,6 +12,29 @@ import config
 import main
 import reporting.yara_generator
 import storage
+from analysis.source_analyzer import CSourceAnalyzer
+
+
+def _fake_ghidra(tmp_path):
+    launcher = tmp_path / "analyzeHeadless"
+    launcher.write_text(
+        """#!/usr/bin/env python3
+import pathlib
+import sys
+
+script_index = sys.argv.index("AIDebugDecompile.java")
+output_directory = pathlib.Path(sys.argv[script_index + 1])
+address_file = pathlib.Path(sys.argv[script_index + 2])
+for address in address_file.read_text(encoding="ascii").splitlines():
+    output_directory.joinpath(address + ".c").write_text(
+        "int ghidra_function(void) {\\n    return 0;\\n}\\n",
+        encoding="utf-8",
+    )
+""",
+        encoding="utf-8",
+    )
+    launcher.chmod(0o700)
+    return launcher
 
 
 def test_main_help_runs():
@@ -169,11 +192,12 @@ def test_offline_cli_analyzes_without_anthropic_key(tmp_path):
     assert db_path.exists()
 
 
-def test_offline_cli_decompiles_elf_and_persists_pseudo_source(tmp_path):
+def test_offline_cli_decompiles_elf_with_ghidra_and_persists_output(tmp_path):
     sample = shutil.which("true")
     if sample is None:
         pytest.skip("A small local ELF fixture is unavailable")
     db_path = tmp_path / "decompile.db"
+    launcher = _fake_ghidra(tmp_path)
     result = subprocess.run(
         [
             sys.executable,
@@ -183,7 +207,8 @@ def test_offline_cli_decompiles_elf_and_persists_pseudo_source(tmp_path):
             "--offline",
             "--no-tui",
             "--decompile",
-            "cpp",
+            "--ghidra-headless",
+            str(launcher),
             "--max-functions",
             "1",
             "--db",
@@ -196,14 +221,16 @@ def test_offline_cli_decompiles_elf_and_persists_pseudo_source(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert "Heuristic decompilation" in result.stdout
-    assert "std::uintptr_t" in result.stdout
+    assert "ghidra decompilation" in result.stdout
+    assert "int ghidra_function" in result.stdout
     with sqlite3.connect(db_path) as connection:
-        code, language = connection.execute(
-            "SELECT decompiled_code, decompile_language FROM function_traces"
+        code, language, backend = connection.execute(
+            "SELECT decompiled_code, decompile_language, decompile_backend "
+            "FROM function_traces"
         ).fetchone()
-    assert code.startswith("std::uintptr_t")
-    assert language == "cpp"
+    assert code.startswith("int ghidra_function")
+    assert language == "c"
+    assert backend == "ghidra"
 
 
 def test_decompile_requires_an_input_before_database_open(tmp_path):
@@ -221,9 +248,9 @@ def test_decompile_requires_an_input_before_database_open(tmp_path):
 
 
 @pytest.mark.skipif(
-    not shutil.which("bwrap")
+    not CSourceAnalyzer.sandbox_available()
     or not any(shutil.which(name) for name in ("cc", "gcc", "clang")),
-    reason="Bubblewrap or an ELF-capable C compiler is unavailable",
+    reason="A usable Bubblewrap sandbox or ELF-capable C compiler is unavailable",
 )
 def test_offline_cli_analyzes_c_source_via_temporary_elf(tmp_path):
     source = tmp_path / "sample.c"
@@ -233,6 +260,7 @@ def test_offline_cli_analyzes_c_source_via_temporary_elf(tmp_path):
         encoding="utf-8",
     )
     db_path = tmp_path / "source.db"
+    launcher = _fake_ghidra(tmp_path)
 
     result = subprocess.run(
         [
@@ -245,7 +273,8 @@ def test_offline_cli_analyzes_c_source_via_temporary_elf(tmp_path):
             "--max-functions",
             "2",
             "--decompile",
-            "cpp",
+            "--ghidra-headless",
+            str(launcher),
             "--report",
             "--json-export",
             "--out-dir",
@@ -264,12 +293,13 @@ def test_offline_cli_analyzes_c_source_via_temporary_elf(tmp_path):
     assert "temporary ELF analysis artifact" in result.stdout
     assert "Format   : C/ELF" in result.stdout
     assert "Found 2 functions" in result.stdout
-    assert "heuristic cpp function reconstruction" in result.stdout
+    assert "Ghidra decompiled" in result.stdout
     assert db_path.exists()
     reports = list((tmp_path / "reports").iterdir())
     assert {path.suffix for path in reports} == {".html", ".json"}
     exported = json.loads(next(path for path in reports if path.suffix == ".json").read_text())
-    assert exported["functions"][0]["decompilation"]["language"] == "cpp"
+    assert exported["functions"][0]["decompilation"]["language"] == "c"
+    assert exported["functions"][0]["decompilation"]["backend"] == "ghidra"
 
 
 def test_c_source_rejects_dynamic_and_yara_modes_before_db_open(tmp_path):

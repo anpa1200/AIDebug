@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-- Added optional, dependency-free `--decompile [pseudo-c|cpp]` output with
-  bounded per-function reconstruction in the CLI, TUI, SQLite session, HTML
-  report, and JSON export; output is explicitly labeled heuristic rather than
-  recovered original source.
+## 1.2.0 - 2026-08-08
+
+- Added optional `--decompile` integration with Ghidra's headless native-code
+  decompiler. Bounded C-like output, backend metadata, and reconstruction
+  warnings flow through the CLI, TUI, SQLite session, HTML report, and JSON
+  export. The command fails clearly when Ghidra is unavailable and never falls
+  back to heuristic register translation presented as decompilation.
 - Added bounded `.c` source analysis through a Bubblewrap-isolated, temporary
   ELF compilation path that never executes the generated artifact; source
   provenance and compiled-artifact hashes are retained in sessions and reports.
@@ -40,9 +43,6 @@
   counts, and socket-to-peer correlation for supported Winsock telemetry.
 - Added session IDs to generated filenames to prevent cross-session report
   collisions in a shared output directory.
-
-These changes are newer than v1.1.0 and require a new version and tag before
-they can be described as released.
 
 ## 1.1.0 - 2026-06-15
 

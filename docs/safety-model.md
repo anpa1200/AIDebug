@@ -89,10 +89,13 @@ characters per string. Symbol-table scanning is capped at 100,000 records, with
 at most 50,000 import and 50,000 export candidates retained. Discovery is capped
 at 300 function candidates and 250 instructions per function; bulk CLI analysis
 defaults to 25 selected functions.
-Optional pseudo-source is capped at 12,000 characters per function. It is a
-deterministic instruction translation with explicit uncertainty, not recovered
-original C/C++: types, names, expressions, and structured control flow can be
-wrong. The underlying disassembly remains the primary local evidence.
+Optional Ghidra output is capped at 12,000 characters per function and each
+function has a separate decompilation timeout. Ghidra runs headlessly in a
+temporary project that AIDebug removes afterward. The result is reconstructed
+C-like code, not recovered original C/C++: types, names, expressions, and
+structured control flow can be wrong. The underlying disassembly remains the
+primary local evidence. If Ghidra is unavailable or fails, AIDebug reports the
+failure rather than substituting heuristic pseudo-source.
 Dynamic instrumentation uses the lower of `--max-functions` and a 50-function
 hook ceiling. Script readiness and hook errors are surfaced by the CLI. A
 zero-hook observer may be waiting for a watched module to load and must not be

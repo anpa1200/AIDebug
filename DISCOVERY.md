@@ -4,9 +4,9 @@ This file keeps external promotion consistent. Use one flagship message per
 platform: AIDebug accelerates malware triage and produces analyst-review seed
 material, not final automated truth.
 
-> Draft status: this copy describes post-v1.1.0 behavior on `main`. Do not
-> publish it as v1.1.0 launch material. Replace the release link and install
-> commands only after a new version is tagged and available from PyPI.
+> Draft status: this copy describes v1.2.0 source behavior on `main`. Replace
+> the historical v1.1.0 release link and PyPI install claims only after v1.2.0
+> is tagged and available from PyPI.
 
 ## Canonical Links
 

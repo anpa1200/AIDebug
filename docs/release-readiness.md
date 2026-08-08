@@ -26,7 +26,8 @@ The gate verifies:
 - installation/import validation for the optional Frida 17.x `dynamic` extra;
 - local compilation and broad-rule screening for AI-backed YARA candidates;
 - wheel and source-distribution metadata with Twine;
-- required JavaScript and heuristic signature data in the wheel;
+- required JavaScript, Ghidra decompiler script, and heuristic signature data
+  in the wheel;
 - absence of known generated reports, databases, bytecode, and duplicate
   signature databases in distribution archives;
 - installation from the built wheel plus safe static ELF parsing and offline
@@ -68,8 +69,9 @@ An owner must verify all of the following outside the source tree:
 
 ## Current Status
 
-The current public version is v1.1.0. Work under `Unreleased` is post-v1.1.0
-and needs a new version/tag. The Debian/Kali proposal supports only the tested
+The current public PyPI version is v1.1.0, while the source tree is prepared as
+v1.2.0. Publishing still requires the exact version-matched tag and release
+workflow. The Debian/Kali proposal supports only the tested
 offline base until optional AI/Frida dependency decisions are made, and it has
 not been accepted or validated on current Kali builders. The checked Ubuntu
 Noble repository is below several declared dependency floors and is not Kali

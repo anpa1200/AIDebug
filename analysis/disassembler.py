@@ -38,6 +38,8 @@ class Function:
     is_library: bool = False
     decompiled_code: str = ''
     decompile_language: str = ''
+    decompile_backend: str = ''
+    decompile_warning: str = ''
 
     @property
     def disassembly_text(self) -> str:

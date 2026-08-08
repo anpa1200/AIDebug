@@ -95,9 +95,9 @@ def test_elf_analysis_reports_bounded_undefined_dynamic_symbols():
 
 
 @pytest.mark.skipif(
-    not shutil.which('bwrap')
+    not CSourceAnalyzer.sandbox_available()
     or not any(shutil.which(name) for name in CSourceAnalyzer.COMPILER_CANDIDATES),
-    reason='Bubblewrap or an ELF-capable C compiler is unavailable',
+    reason='A usable Bubblewrap sandbox or ELF-capable C compiler is unavailable',
 )
 def test_c_source_analysis_compiles_without_execution_and_keeps_local_symbols(tmp_path):
     source = tmp_path / 'fixture.c'
@@ -138,8 +138,28 @@ def test_c_source_analysis_rejects_non_c_and_nul_bytes(tmp_path):
         CSourceAnalyzer(compiler='/bin/false').analyze(nul_source)
 
 
+def test_c_source_analysis_explains_ubuntu_bubblewrap_userns_denial(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / 'fixture.c'
+    source.write_text('int main(void) { return 0; }\n', encoding='utf-8')
+
+    class DeniedProcess:
+        returncode = 1
+        pid = 1
+
+        @staticmethod
+        def communicate(timeout=None):
+            del timeout
+            return b'', b'bwrap: setting up uid map: Permission denied\n'
+
+    monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kwargs: DeniedProcess())
+    with pytest.raises(RuntimeError, match='AppArmor user-namespace restrictions'):
+        CSourceAnalyzer(compiler='/usr/bin/cc', sandbox='/usr/bin/bwrap').analyze(source)
+
+
 @pytest.mark.skipif(
-    not shutil.which('bwrap')
+    not CSourceAnalyzer.sandbox_available()
     or not any(shutil.which(name) for name in CSourceAnalyzer.COMPILER_CANDIDATES),
     reason='the sandboxed C toolchain is unavailable',
 )
@@ -357,13 +377,17 @@ def test_trace_store_foreign_keys_upserts_cross_session_cache_and_events(tmp_pat
     snapshot = SimpleNamespace(entry_registers={'rax': '1'}, exit_registers={'rax': '2'}, return_value=2)
     function.instructions.append(Instruction(0x1001, 'nop', '', b'\x90'))
     function.decompiled_code = 'uintptr_t analyzed(void) { return rax; }'
-    function.decompile_language = 'pseudo-c'
+    function.decompile_language = 'c'
+    function.decompile_backend = 'ghidra'
+    function.decompile_warning = 'Not original source.'
     store.save_function_analysis(first_session, function, make_analysis('updated'), snapshot)
     trace = store.get_all_traces(first_session)[0]
     assert trace['instruction_count'] == 2
     assert json.loads(trace['snapshot_json'])['return_value'] == 2
     assert trace['decompiled_code'].startswith('uintptr_t analyzed')
-    assert trace['decompile_language'] == 'pseudo-c'
+    assert trace['decompile_language'] == 'c'
+    assert trace['decompile_backend'] == 'ghidra'
+    assert trace['decompile_warning'] == 'Not original source.'
 
     store.save_runtime_event(first_session, {'event': 'transition', 'address': '0x1'})
     assert store.get_runtime_events(first_session)[0]['event_type'] == 'transition'
@@ -407,9 +431,11 @@ def test_trace_store_migrates_v1_database(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='table' AND name='runtime_events'"
         ).fetchone()
     assert 'analysis_cache_key' in columns
-    assert {'decompiled_code', 'decompile_language'} <= columns
+    assert {
+        'decompiled_code', 'decompile_language', 'decompile_backend', 'decompile_warning'
+    } <= columns
     assert {'file_format', 'analysis_origin', 'compiled_sha256'} <= session_columns
-    assert version == 5
+    assert version == 6
     assert runtime_table is not None
 
 
