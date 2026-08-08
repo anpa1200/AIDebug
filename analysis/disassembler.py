@@ -36,6 +36,8 @@ class Function:
     patterns: list = field(default_factory=list)    # [MalwarePattern]
     flirt_match: object = field(default=None)        # FlirtMatch or None
     is_library: bool = False
+    decompiled_code: str = ''
+    decompile_language: str = ''
 
     @property
     def disassembly_text(self) -> str:
@@ -100,6 +102,7 @@ class Disassembler:
         self._known_function_starts = {
             binary_info.entry_point,
             *(exp['address'] for exp in binary_info.exports),
+            *(sym['address'] for sym in getattr(binary_info, 'function_symbols', [])),
         }
 
     # ------------------------------------------------------------------
@@ -128,17 +131,27 @@ class Disassembler:
         visited: set = set()
 
         queue.add(self.info.entry_point)
-        # Seed only as many exports as this discovery request can return. This
-        # prevents a low CLI limit from first sorting/scanning an unbounded
-        # symbol table on large developer runtimes.
-        export_seeds = heapq.nsmallest(
+        # Seed only as many known ELF symbols/PE exports as this discovery
+        # request can return. This prevents a low CLI limit from first
+        # sorting/scanning an unbounded symbol table on large runtimes.
+        named_seeds = {
+            (item['address'], item['name'])
+            for item in [
+                *getattr(self.info, 'function_symbols', []),
+                *self.info.exports,
+            ]
+        }
+        symbol_seeds = heapq.nsmallest(
             limit,
-            (exp for exp in self.info.exports if self._in_exec(exp['address'])),
-            key=lambda exp: (exp['address'], exp['name']),
+            (
+                {'address': address, 'name': name}
+                for address, name in named_seeds
+                if self._in_exec(address)
+            ),
+            key=lambda item: (item['address'], item['name']),
         )
-        for exp in export_seeds:
-            if self._in_exec(exp['address']):
-                queue.add(exp['address'])
+        for symbol in symbol_seeds:
+            queue.add(symbol['address'])
 
         found = []
 
@@ -168,11 +181,15 @@ class Disassembler:
                     if addr not in callee.called_from:
                         callee.called_from.append(addr)
 
-        # Apply export names
-        for exp in self.info.exports:
-            a = exp['address']
+        # Apply ELF symbol/PE export names. Exports are processed last so an
+        # externally visible name wins when aliases share an address.
+        for symbol in [
+            *getattr(self.info, 'function_symbols', []),
+            *self.info.exports,
+        ]:
+            a = symbol['address']
             if a in self.functions:
-                self.functions[a].name = exp['name']
+                self.functions[a].name = symbol['name']
 
         # Run pattern detection + FLIRT on all discovered functions
         self._run_enrichment(found)

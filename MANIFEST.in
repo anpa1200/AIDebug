@@ -7,7 +7,7 @@ include RELEASE.md
 include requirements*.txt
 recursive-include assets/screenshots *.png *.md
 recursive-include docs *.md
-recursive-include examples *.md *.py *.json *.yar *.html
+recursive-include examples *.md *.py *.c *.json *.yar *.html
 recursive-include debugger/scripts *.js
 recursive-include scripts *.py *.sh
 recursive-include debian *

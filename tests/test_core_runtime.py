@@ -1,5 +1,7 @@
+import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -14,6 +16,7 @@ from analysis.cfg import CFGBuilder
 from analysis.disassembler import Disassembler, Function, Instruction, _capstone_params
 from analysis.flirt import FlirtMatcher, _function_fingerprint
 from analysis.pattern_detector import PatternDetector
+from analysis.source_analyzer import CSourceAnalyzer
 from analysis.static_analyzer import BinaryInfo, SectionInfo, StaticAnalyzer
 from debugger.engine import DebugEngine
 from debugger.snapshot import MemoryDiff
@@ -89,6 +92,66 @@ def test_elf_analysis_reports_bounded_undefined_dynamic_symbols():
     assert info.file_format == 'ELF'
     assert info.imports and info.imports[0].dll == 'ELF dynamic symbols'
     assert 0 < len(info.imports_flat) <= config.MAX_IMPORT_FUNCTIONS
+
+
+@pytest.mark.skipif(
+    not any(shutil.which(name) for name in CSourceAnalyzer.COMPILER_CANDIDATES),
+    reason='an ELF-capable C compiler is unavailable',
+)
+def test_c_source_analysis_compiles_without_execution_and_keeps_local_symbols(tmp_path):
+    source = tmp_path / 'fixture.c'
+    source.write_text(
+        'static __attribute__((noinline)) int helper(int value) { return value + 1; }\n'
+        'int main(void) { return helper(4); }\n',
+        encoding='utf-8',
+    )
+
+    info = CSourceAnalyzer().analyze(source)
+
+    assert info.path == str(source.resolve())
+    assert info.filename == 'fixture.c'
+    assert info.file_format == 'C/ELF'
+    assert info.analysis_origin == (
+        'C source compiled in a filesystem sandbox to temporary ELF (not executed)'
+    )
+    assert info.sha256 == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert info.compiled_sha256 == hashlib.sha256(info.raw_data).hexdigest()
+    assert info.raw_data.startswith(b'\x7fELF')
+    assert {'helper', 'main'} <= {item['name'] for item in info.function_symbols}
+
+    disassembler = Disassembler(info)
+    addresses = disassembler.discover_functions(max_functions=10)
+    names = {disassembler.get_function(address).name for address in addresses}
+    assert {'helper', 'main'} <= names
+
+
+def test_c_source_analysis_rejects_non_c_and_nul_bytes(tmp_path):
+    text_file = tmp_path / 'fixture.txt'
+    text_file.write_text('int main(void) { return 0; }', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'\.c extension'):
+        CSourceAnalyzer(compiler='/bin/false').analyze(text_file)
+
+    nul_source = tmp_path / 'fixture.c'
+    nul_source.write_bytes(b'int main(void) { return 0; }\x00')
+    with pytest.raises(ValueError, match='NUL byte'):
+        CSourceAnalyzer(compiler='/bin/false').analyze(nul_source)
+
+
+@pytest.mark.skipif(
+    not shutil.which('bwrap')
+    or not any(shutil.which(name) for name in CSourceAnalyzer.COMPILER_CANDIDATES),
+    reason='the sandboxed C toolchain is unavailable',
+)
+def test_c_source_compiler_cannot_embed_unrelated_host_files(tmp_path):
+    source = tmp_path / 'host-read.c'
+    source.write_text(
+        '__asm__(".section .rodata\\n.incbin \\"/etc/hostname\\"\\n.text\\n");\n'
+        'int main(void) { return 0; }\n',
+        encoding='utf-8',
+    )
+
+    with pytest.raises(ValueError, match='C compilation failed'):
+        CSourceAnalyzer().analyze(source)
 
 
 def test_string_extraction_is_chunk_bounded_and_maps_wide_offsets():
@@ -292,10 +355,14 @@ def test_trace_store_foreign_keys_upserts_cross_session_cache_and_events(tmp_pat
 
     snapshot = SimpleNamespace(entry_registers={'rax': '1'}, exit_registers={'rax': '2'}, return_value=2)
     function.instructions.append(Instruction(0x1001, 'nop', '', b'\x90'))
+    function.decompiled_code = 'uintptr_t analyzed(void) { return rax; }'
+    function.decompile_language = 'pseudo-c'
     store.save_function_analysis(first_session, function, make_analysis('updated'), snapshot)
     trace = store.get_all_traces(first_session)[0]
     assert trace['instruction_count'] == 2
     assert json.loads(trace['snapshot_json'])['return_value'] == 2
+    assert trace['decompiled_code'].startswith('uintptr_t analyzed')
+    assert trace['decompile_language'] == 'pseudo-c'
 
     store.save_runtime_event(first_session, {'event': 'transition', 'address': '0x1'})
     assert store.get_runtime_events(first_session)[0]['event_type'] == 'transition'
@@ -331,12 +398,17 @@ def test_trace_store_migrates_v1_database(tmp_path):
 
     with TraceStore(db_path) as store:
         columns = {row['name'] for row in store.conn.execute('PRAGMA table_info(function_traces)')}
+        session_columns = {
+            row['name'] for row in store.conn.execute('PRAGMA table_info(sessions)')
+        }
         version = store.conn.execute('PRAGMA user_version').fetchone()[0]
         runtime_table = store.conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='runtime_events'"
         ).fetchone()
     assert 'analysis_cache_key' in columns
-    assert version == 3
+    assert {'decompiled_code', 'decompile_language'} <= columns
+    assert {'file_format', 'analysis_origin', 'compiled_sha256'} <= session_columns
+    assert version == 5
     assert runtime_table is not None
 
 

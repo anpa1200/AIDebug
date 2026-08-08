@@ -55,7 +55,7 @@ class FakeAnalyzer:
 
 
 def _function(address, name):
-    return Function(
+    function = Function(
         address=address,
         name=name,
         instructions=[
@@ -64,6 +64,9 @@ def _function(address, name):
         ],
         strings_referenced=["[bold red]literal[/bold red]"],
     )
+    function.decompiled_code = "uintptr_t sample(void) { return rax; }"
+    function.decompile_language = "pseudo-c"
+    return function
 
 
 def _analysis(address, name="function"):
@@ -120,6 +123,7 @@ def test_tui_headless_mount_tabs_selection_and_bounded_batch():
                 "tab-ai",
                 "tab-cfg",
                 "tab-patterns",
+                "tab-decompile",
             }
             tabs = app.query_one("#right-tabs")
             tabs.active = "tab-cfg"

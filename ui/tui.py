@@ -285,6 +285,8 @@ Screen {
                         yield RichLog(id="cfg-log", highlight=True, markup=True)
                     with TabPane("Patterns", id="tab-patterns"):
                         yield RichLog(id="patterns-log", highlight=True, markup=True)
+                    with TabPane("Pseudo-code", id="tab-decompile"):
+                        yield RichLog(id="decompile-log", highlight=True, markup=True)
 
         # Bottom — chat bar
         with Horizontal(id="chat-bar"):
@@ -381,6 +383,7 @@ Screen {
         self._render_registers(None)
         self._render_cfg(func)
         self._render_patterns(func)
+        self._render_decompilation(func)
 
         # Show cached analysis if available
         if address in self._analyses:
@@ -501,6 +504,23 @@ Screen {
             if p.evidence:
                 log.write(f"  [dim]Evidence: {_markup_text(p.evidence)}[/dim]")
             log.write("")
+
+    def _render_decompilation(self, func):
+        log: RichLog = self.query_one("#decompile-log")
+        log.clear()
+        code = getattr(func, "decompiled_code", "")
+        if not code:
+            log.write(
+                "[dim]No pseudo-source was requested. Restart with "
+                "--decompile or --decompile cpp.[/dim]"
+            )
+            return
+        language = getattr(func, "decompile_language", "pseudo-c") or "pseudo-c"
+        log.write(
+            "[bold yellow]Heuristic reconstruction — not original source[/bold yellow] "
+            f"[dim]({_markup_text(language, 32)})[/dim]\n"
+        )
+        log.write(Text(_display_text(code, config.MAX_DECOMPILED_CHARS)))
 
     # ------------------------------------------------------------------
     # AI analysis panel

@@ -67,6 +67,7 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | YARA candidate rules | Detection-engineering seed that must be compiled and tested |
 | Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
 | CFG visualization | Function-level behavior review |
+| Heuristic pseudo-C/C++ reconstruction | Readable function triage; not recovered original source |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -83,6 +84,39 @@ aidebug --help
 aidebug --version
 aidebug --binary /path/to/sample --offline --no-tui --json-export --out-dir reports/
 ```
+
+ELF binaries use the same static-analysis command as PE files:
+
+```bash
+aidebug --binary /path/to/sample.elf --offline --no-tui
+```
+
+Add bounded pseudo-C to CLI, TUI, HTML, and JSON output with `--decompile`.
+Select a conservative C++-style renderer with `--decompile cpp`:
+
+```bash
+aidebug --binary /path/to/sample.elf --offline --no-tui --decompile
+aidebug --binary /path/to/sample.exe --offline --no-tui --decompile cpp
+```
+
+This reconstruction is deterministic and dependency-free. It translates
+common instructions, preserves explicit labels and branches, and leaves
+unrecognized operations as assembly comments. It does not recover original
+types, variable names, expressions, source structure, or comments.
+
+C source analysis requires an ELF-capable `cc`, `gcc`, or `clang` plus
+Bubblewrap (`bwrap`). AIDebug copies the selected translation unit into a
+filesystem-isolated build directory, compiles a temporary ELF shared object,
+analyzes it, and deletes it without execution:
+
+```bash
+aidebug --source /path/to/sample.c --offline --no-tui
+```
+
+The C workflow accepts one `.c` translation unit up to 2 MiB. System headers
+are available, but project-local headers and multi-file builds are not yet
+supported. Dynamic mode and YARA generation are deliberately unavailable for
+source inputs because their evidence comes from a temporary compiled surrogate.
 
 The base source installation supports deterministic offline analysis. After the
 next release, the PyPI distribution remains `1200km-aidebug` and the command is
@@ -139,6 +173,8 @@ material:
 
 - [`examples/toy_xor_config.py`](examples/toy_xor_config.py) - a benign toy XOR
   loop for documentation.
+- [`examples/toy_c_analysis.c`](examples/toy_c_analysis.c) - a benign C fixture
+  for sandboxed temporary-ELF analysis.
 - [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
   - hand-authored schema-v2 offline session example with an all-zero mock hash.
 - [`examples/mock-output/aidebug-candidate.yar`](examples/mock-output/aidebug-candidate.yar)
@@ -153,7 +189,9 @@ tests, and integration demos. They are not execution or accuracy evidence.
 
 ```mermaid
 flowchart LR
-  Sample[Binary sample] --> Parse[PE/ELF parsing]
+  Sample[PE/ELF sample] --> Parse[PE/ELF parsing]
+  Source[C source] --> Compile[Sandboxed temporary ELF compilation]
+  Compile --> Parse
   Parse --> Disasm[Capstone disassembly]
   Disasm --> Patterns[Malware pattern detection]
   Patterns --> Offline[Offline evidence summary]
@@ -175,7 +213,7 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 | Area | Coverage |
 |---|---|
 | Malware patterns | XOR loops, stack strings, API hashing, RDTSC timing, direct syscalls, NOP sleds, null-safe XOR, Base64 tables |
-| Formats | PE32, PE64, ELF |
+| Formats | PE32, PE64, ELF, and one-file C source compiled to a temporary ELF |
 | Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
 | Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
 | Reports | HTML, versioned AIDebug JSON, and YARA candidates |
@@ -183,9 +221,10 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 ## Safety
 
 Use AIDebug only in an isolated malware-analysis VM or lab. Do not run unknown
-samples on your host OS. Static analysis can inspect PE/ELF files directly;
-dynamic mode attaches Frida to a running process or sandbox and should be used
-only with authorization and isolation.
+samples on your host OS. Static analysis can inspect PE/ELF files directly.
+C inputs are compiled inside a Bubblewrap filesystem sandbox and the generated
+ELF is never executed. Dynamic mode attaches Frida to a running process or
+sandbox and should be used only with authorization and isolation.
 
 ## Limitations And Honesty
 
@@ -194,6 +233,8 @@ sandbox validation, or analyst judgment. Discovery is bounded and can miss
 indirect, packed, overlaid, stripped, or unreachable code. Heuristic library
 identification can collide. ATT&CK, risk, IOC, and YARA outputs require review.
 Dynamic static-to-runtime address mapping can be incomplete under ASLR/PIE.
+The optional pseudo-C/C++ renderer is a bounded heuristic view over discovered
+instructions, not a compiler-grade decompiler and not recovered source.
 Tracer startup reports whether each observer is ready and how many hooks are
 installed at that moment; a zero count can increase when a watched module loads
 later and is not evidence that any target call was captured.
@@ -202,7 +243,8 @@ Session databases and exports can contain sensitive sample and runtime evidence
 and are not encrypted by AIDebug. See the [safety and privacy
 model](docs/safety-model.md).
 
-Current protective defaults reject samples above 128 MiB, cap discovery at 300
+Current protective defaults reject binary samples above 128 MiB and C source
+above 2 MiB, cap C compilation at 30 seconds, cap discovery at 300
 functions and 250 instructions per function, scan at most 100,000 symbols, cap
 stored import/export candidates at 50,000 each, cap dynamic instrumentation at 50
 function hooks, cap one YARA ruleset at the requested `--max-functions` value,

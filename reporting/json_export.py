@@ -126,6 +126,18 @@ class JSONExporter:
                 "strings_referenced": strings_referenced,
                 "deterministic_patterns": patterns_by_address.get(address, []),
 
+                # Optional bounded heuristic reconstruction. This is derived
+                # output, not recovered original source.
+                "decompilation": {
+                    "language": self._text(trace.get("decompile_language") or "pseudo-c"),
+                    "confidence": "heuristic",
+                    "warning": (
+                        "Reconstructed from machine code; not original source. "
+                        "Types, names, expressions, and control flow may be inaccurate."
+                    ),
+                    "code": self._text(trace.get("decompiled_code")),
+                } if trace.get("decompiled_code") else None,
+
                 # AI analysis
                 "ai": {
                     "summary":         self._text(ai.get("summary")),
@@ -214,6 +226,9 @@ class JSONExporter:
                 "arch":       self._text(session.get("arch")),
                 "bits":       self._nonnegative_int(session.get("bits")),
                 "os_target":  self._text(session.get("os_target")),
+                "format":     self._text(session.get("file_format")),
+                "analysis_origin": self._text(session.get("analysis_origin")),
+                "compiled_artifact_sha256": self._text(session.get("compiled_sha256")),
             },
 
             # Session metadata

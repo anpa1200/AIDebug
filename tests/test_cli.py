@@ -1,5 +1,7 @@
+import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 from argparse import Namespace
@@ -22,6 +24,8 @@ def test_main_help_runs():
     assert result.returncode == 0
     assert "AIDebug" in result.stdout
     assert "--binary" in result.stdout
+    assert "--source" in result.stdout
+    assert "--decompile" in result.stdout
 
 
 def test_version_matches_release_metadata():
@@ -163,6 +167,138 @@ def test_offline_cli_analyzes_without_anthropic_key(tmp_path):
     assert "Bulk preflight: 1 function" in result.stdout
     assert str(db_path) in result.stdout
     assert db_path.exists()
+
+
+def test_offline_cli_decompiles_elf_and_persists_pseudo_source(tmp_path):
+    sample = shutil.which("true")
+    if sample is None:
+        pytest.skip("A small local ELF fixture is unavailable")
+    db_path = tmp_path / "decompile.db"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--binary",
+            sample,
+            "--offline",
+            "--no-tui",
+            "--decompile",
+            "cpp",
+            "--max-functions",
+            "1",
+            "--db",
+            str(db_path),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Heuristic decompilation" in result.stdout
+    assert "std::uintptr_t" in result.stdout
+    with sqlite3.connect(db_path) as connection:
+        code, language = connection.execute(
+            "SELECT decompiled_code, decompile_language FROM function_traces"
+        ).fetchone()
+    assert code.startswith("std::uintptr_t")
+    assert language == "cpp"
+
+
+def test_decompile_requires_an_input_before_database_open(tmp_path):
+    db_path = tmp_path / "must-not-exist.db"
+    result = subprocess.run(
+        [sys.executable, "main.py", "--decompile", "--db", str(db_path)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 2
+    assert "--decompile requires --binary or --source" in result.stderr
+    assert not db_path.exists()
+
+
+@pytest.mark.skipif(
+    not any(shutil.which(name) for name in ("cc", "gcc", "clang")),
+    reason="an ELF-capable C compiler is unavailable",
+)
+def test_offline_cli_analyzes_c_source_via_temporary_elf(tmp_path):
+    source = tmp_path / "sample.c"
+    source.write_text(
+        "static __attribute__((noinline)) int helper(int x) { return x + 1; }\n"
+        "int main(void) { return helper(4); }\n",
+        encoding="utf-8",
+    )
+    db_path = tmp_path / "source.db"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--source",
+            str(source),
+            "--offline",
+            "--no-tui",
+            "--max-functions",
+            "2",
+            "--decompile",
+            "cpp",
+            "--report",
+            "--json-export",
+            "--out-dir",
+            str(tmp_path / "reports"),
+            "--db",
+            str(db_path),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={key: value for key, value in os.environ.items() if key != "ANTHROPIC_API_KEY"},
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "temporary ELF analysis artifact" in result.stdout
+    assert "Format   : C/ELF" in result.stdout
+    assert "Found 2 functions" in result.stdout
+    assert "heuristic cpp function reconstruction" in result.stdout
+    assert db_path.exists()
+    reports = list((tmp_path / "reports").iterdir())
+    assert {path.suffix for path in reports} == {".html", ".json"}
+    exported = json.loads(next(path for path in reports if path.suffix == ".json").read_text())
+    assert exported["functions"][0]["decompilation"]["language"] == "cpp"
+
+
+def test_c_source_rejects_dynamic_and_yara_modes_before_db_open(tmp_path):
+    source = tmp_path / "sample.c"
+    source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+
+    for index, (extra_args, expected) in enumerate((
+        (["--mode", "dynamic"], "never executed"),
+        (["--yara"], "unavailable for C source"),
+    )):
+        db_path = tmp_path / f"rejected-{index}.db"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "main.py",
+                "--source",
+                str(source),
+                "--offline",
+                "--db",
+                str(db_path),
+                *extra_args,
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+
+        assert result.returncode == 2
+        assert expected in result.stderr
+        assert not db_path.exists()
 
 
 def test_execute_always_closes_store(monkeypatch, tmp_path):

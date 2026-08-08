@@ -1,12 +1,15 @@
 from .cfg import CFG, CFGBuilder, CFGSVGRenderer, CFGTextRenderer
+from .decompiler import DecompiledFunction, PseudoDecompiler
 from .disassembler import Disassembler, Function, Instruction
 from .flirt import FlirtMatch, FlirtMatcher
 from .pattern_detector import MalwarePattern, PatternDetector
+from .source_analyzer import CSourceAnalyzer
 from .static_analyzer import BinaryInfo, ImportInfo, SectionInfo, StaticAnalyzer
 
 __all__ = [
-    'StaticAnalyzer', 'BinaryInfo', 'SectionInfo', 'ImportInfo',
+    'StaticAnalyzer', 'CSourceAnalyzer', 'BinaryInfo', 'SectionInfo', 'ImportInfo',
     'Disassembler', 'Function', 'Instruction',
+    'PseudoDecompiler', 'DecompiledFunction',
     'AIAnalyzer', 'AIAnalysis', 'AIAnalyzerError', 'OfflineAnalyzer',
     'CFGBuilder', 'CFGTextRenderer', 'CFGSVGRenderer', 'CFG',
     'PatternDetector', 'MalwarePattern', 'FlirtMatcher', 'FlirtMatch',

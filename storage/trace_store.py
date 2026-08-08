@@ -13,7 +13,7 @@ import warnings
 
 import config
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     arch        TEXT,
     bits        INTEGER,
     os_target   TEXT,
+    file_format TEXT,
+    analysis_origin TEXT,
+    compiled_sha256 TEXT,
     created_at  TEXT    DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -33,6 +36,8 @@ CREATE TABLE IF NOT EXISTS function_traces (
     address           INTEGER NOT NULL,
     name              TEXT,
     disassembly       TEXT,
+    decompiled_code   TEXT,
+    decompile_language TEXT,
     calls_to          TEXT,    -- JSON array
     called_from       TEXT,    -- JSON array
     strings_referenced TEXT,   -- JSON array
@@ -235,11 +240,21 @@ class TraceStore:
 
     def _migrate_schema(self):
         """Apply small additive migrations for databases created by v1.1.0."""
-        columns = {
+        trace_columns = {
             row['name'] for row in self.conn.execute('PRAGMA table_info(function_traces)')
         }
-        if 'analysis_cache_key' not in columns:
+        if 'analysis_cache_key' not in trace_columns:
             self.conn.execute('ALTER TABLE function_traces ADD COLUMN analysis_cache_key TEXT')
+        if 'decompiled_code' not in trace_columns:
+            self.conn.execute('ALTER TABLE function_traces ADD COLUMN decompiled_code TEXT')
+        if 'decompile_language' not in trace_columns:
+            self.conn.execute('ALTER TABLE function_traces ADD COLUMN decompile_language TEXT')
+        session_columns = {
+            row['name'] for row in self.conn.execute('PRAGMA table_info(sessions)')
+        }
+        for name in ('file_format', 'analysis_origin', 'compiled_sha256'):
+            if name not in session_columns:
+                self.conn.execute(f'ALTER TABLE sessions ADD COLUMN {name} TEXT')
         self.conn.execute(f'PRAGMA user_version={SCHEMA_VERSION}')
 
     def _record_event_drop(self, table: str, session_id: int):
@@ -324,8 +339,9 @@ class TraceStore:
         with self._lock, self.conn:
             self._ensure_open()
             cur = self.conn.execute(
-                "INSERT INTO sessions (binary_path, filename, sha256, arch, bits, os_target) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO sessions "
+                "(binary_path, filename, sha256, arch, bits, os_target, file_format, "
+                "analysis_origin, compiled_sha256) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     self._bounded_text(binary_info.path, 8_192),
                     self._bounded_text(binary_info.filename, 1_024),
@@ -333,6 +349,9 @@ class TraceStore:
                     self._bounded_text(binary_info.arch, 128),
                     self._bounded_int(binary_info.bits, 0, 128),
                     self._bounded_text(binary_info.os_target, 128),
+                    self._bounded_text(getattr(binary_info, 'file_format', ''), 128),
+                    self._bounded_text(getattr(binary_info, 'analysis_origin', 'binary'), 256),
+                    self._bounded_text(getattr(binary_info, 'compiled_sha256', '') or '', 128),
                 ),
             )
             return cur.lastrowid
@@ -380,13 +399,16 @@ class TraceStore:
             self._ensure_open()
             self.conn.execute("""
                 INSERT INTO function_traces
-                    (session_id, address, name, disassembly, calls_to, called_from,
+                    (session_id, address, name, disassembly, decompiled_code,
+                     decompile_language, calls_to, called_from,
                      strings_referenced, instruction_count, snapshot_json,
                      ai_analysis_json, risk_level, mitre_technique, analysis_cache_key)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(session_id, address) DO UPDATE SET
                     name=excluded.name,
                     disassembly=excluded.disassembly,
+                    decompiled_code=excluded.decompiled_code,
+                    decompile_language=excluded.decompile_language,
                     calls_to=excluded.calls_to,
                     called_from=excluded.called_from,
                     strings_referenced=excluded.strings_referenced,
@@ -402,6 +424,11 @@ class TraceStore:
                 function.address,
                 self._bounded_text(analysis.suggested_name, 256),
                 self._bounded_text(function.disassembly_text, 8_000),
+                self._bounded_text(
+                    getattr(function, 'decompiled_code', ''),
+                    config.MAX_DECOMPILED_CHARS,
+                ),
+                self._bounded_text(getattr(function, 'decompile_language', ''), 32),
                 self._dump_json(function.calls_to),
                 self._dump_json(function.called_from),
                 self._dump_json(function.strings_referenced),
