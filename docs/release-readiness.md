@@ -27,7 +27,7 @@ The gate verifies:
 - local compilation and broad-rule screening for AI-backed YARA candidates;
 - wheel and source-distribution metadata with Twine;
 - required JavaScript, Ghidra decompiler script, heuristic signature data, and
-  the real C learning corpus in the wheel;
+  the individual real C learning cases in the wheel;
 - absence of known generated reports, databases, bytecode, and duplicate
   signature databases in distribution archives;
 - installation from the built wheel plus safe static ELF parsing and offline
@@ -70,7 +70,7 @@ An owner must verify all of the following outside the source tree:
 ## Current Status
 
 The current public PyPI version is v1.1.0, while the source tree is prepared as
-v1.3.1. Publishing still requires the exact version-matched tag and release
+v1.3.2. Publishing still requires the exact version-matched tag and release
 workflow. The Debian/Kali proposal supports only the tested
 offline base until optional AI/Frida dependency decisions are made, and it has
 not been accepted or validated on current Kali builders. The checked Ubuntu

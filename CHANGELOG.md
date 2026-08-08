@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.3.2 - 2026-08-08
+
+- Replaced the shared Learning Mode translation unit with 47 independently
+  packaged source files under `learning/cases/`. Selecting a lesson now
+  compiles only that case file, then shows that exact file beside its complete
+  machine instructions and Ghidra reconstruction.
+- Added dedicated real cases for MOV load/store, LEA address calculation, LEA
+  arithmetic, MOVZX, MOVSX, MOVSXD, and XCHG. The XCHG case uses explicit
+  source-level inline assembly so its compiled artifact reliably contains the
+  instruction instead of depending on an optimizer's swap implementation.
+- Added source-file provenance to Learning Mode and retained aliases for the
+  v1.3.1 data-movement lesson IDs.
+
 ## 1.3.1 - 2026-08-08
 
 - Replaced handwritten Learning Mode assembly and pseudo-code cards with 44

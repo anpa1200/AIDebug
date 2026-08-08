@@ -32,6 +32,7 @@ def render_lesson(result: AnalyzedLesson, console: Console | None = None) -> Non
     body = Group(
         Text(f"Category: {lesson.category}", style="dim"),
         Text(f"Function: {lesson.function_name} @ 0x{result.function_address:x}", style="dim"),
+        Text(f"Source file: {result.source_file}", style="dim"),
         Text(f"Compiler: {result.compiler}", style="dim"),
         Text(f"Artifact SHA-256: {result.artifact_sha256}", style="dim"),
         Text("\nReal C function compiled for this lesson", style="bold magenta"),

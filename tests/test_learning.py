@@ -21,7 +21,8 @@ def test_learning_catalog_has_at_least_thirty_complete_unique_lessons():
 
 
 def test_learning_catalog_supports_exact_and_category_search():
-    assert get_lesson("load-u32").function_name == "learn_load_u32"
+    assert get_lesson("mov-load").function_name == "learn_mov_load"
+    assert get_lesson("load-u32").lesson_id == "mov-load"
     assert get_lesson("missing") is None
     matches = find_lessons("arithmetic")
     assert matches
@@ -29,9 +30,9 @@ def test_learning_catalog_supports_exact_and_category_search():
 
 
 def test_every_catalog_lesson_maps_to_one_real_c_function():
-    corpus = LiveLearningAnalyzer._read_corpus()
     for lesson in catalog():
-        source = LiveLearningAnalyzer._extract_function_source(corpus, lesson.lesson_id)
+        filename, source = LiveLearningAnalyzer._read_case(lesson.lesson_id)
+        assert filename == f"{lesson.lesson_id}.c"
         assert lesson.function_name in source
 
 
@@ -57,7 +58,41 @@ def test_live_learning_compiles_real_elf_and_uses_real_disassembly():
     )
 
     assert "learn_subtract" in result.source
+    assert result.source_file == "learning/cases/subtract.c"
     assert "sub" in result.assembly.lower()
     assert "0x" in result.assembly
     assert result.pseudocode.startswith("int learn_subtract")
     assert len(result.artifact_sha256) == 64
+
+
+@pytest.mark.skipif(not any(shutil.which(name) for name in ("cc", "gcc", "clang")), reason="no C compiler")
+def test_dedicated_data_movement_files_emit_their_real_instruction_families():
+    class FakeDecompiler:
+        def __init__(self, info, executable=None):
+            self.info = info
+
+        def decompile(self, addresses):
+            address = addresses[0]
+            return {
+                address: SimpleNamespace(
+                    code="void reconstructed_from_machine_code(void) {}",
+                    backend="test-ghidra",
+                    warning="test reconstruction",
+                )
+            }
+
+    analyzer = LiveLearningAnalyzer(decompiler_factory=FakeDecompiler)
+    expected = {
+        "mov-load": "mov eax",
+        "mov-store": "mov dword ptr",
+        "lea-address": "lea rax",
+        "lea-arithmetic": "lea eax",
+        "movzx": "movzx",
+        "movsx": "movsx",
+        "movsxd": "movsxd",
+        "xchg": "xchg",
+    }
+    for lesson_id, mnemonic in expected.items():
+        result = analyzer.analyze(get_lesson(lesson_id))
+        assert result.source_file == f"learning/cases/{lesson_id}.c"
+        assert mnemonic in result.assembly.lower()

@@ -48,7 +48,7 @@ done
 "$work_dir/venv/bin/python" -c \
   "from learning import catalog; assert len(catalog()) >= 30"
 "$work_dir/venv/bin/python" -c \
-  "from importlib.resources import files; assert files('learning').joinpath('functions.c').is_file()"
+  "from importlib.resources import files; root = files('learning').joinpath('cases'); assert root.joinpath('case_common.h').is_file() and root.joinpath('mov-load.c').is_file()"
 "$work_dir/venv/bin/python" -c \
   "from analysis.static_analyzer import StaticAnalyzer; info = StaticAnalyzer().analyze('/bin/true'); assert info.file_format == 'ELF'"
 "$work_dir/venv/bin/aidebug" --binary /bin/true --offline --no-tui --json-export --yara \
