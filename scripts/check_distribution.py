@@ -8,6 +8,12 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+LEARNING_CASE_SUFFIXES = {
+    f"learning/cases/{path.name}"
+    for path in (ROOT / "learning" / "cases").glob("*.c")
+}
+
 REQUIRED_WHEEL_SUFFIXES = {
     "analysis/data/AIDebugDecompile.java",
     "analysis/data/flirt_sigs.json",
@@ -16,7 +22,9 @@ REQUIRED_WHEEL_SUFFIXES = {
     "debugger/scripts/tracer.js",
     "debugger/scripts/unpack_detector.js",
     "learning/catalog.py",
-    "learning/functions.c",
+    "learning/cases/case_common.h",
+    "learning/cases/mov-load.c",
+    "learning/cases/switch-dispatch.c",
     "learning/live.py",
     "learning/renderer.py",
 }
@@ -45,7 +53,9 @@ REQUIRED_SDIST_SUFFIXES = {
     "examples/mock-output/aidebug-session.json",
     "examples/toy_c_analysis.c",
     "learning/catalog.py",
-    "learning/functions.c",
+    "learning/cases/case_common.h",
+    "learning/cases/mov-load.c",
+    "learning/cases/switch-dispatch.c",
     "learning/live.py",
     "learning/renderer.py",
     "requirements-ai.txt",
@@ -57,6 +67,8 @@ REQUIRED_SDIST_SUFFIXES = {
     "scripts/check_release_metadata.py",
     "scripts/release-readiness.sh",
 }
+REQUIRED_WHEEL_SUFFIXES.update(LEARNING_CASE_SUFFIXES)
+REQUIRED_SDIST_SUFFIXES.update(LEARNING_CASE_SUFFIXES)
 FORBIDDEN_PARTS = {
     ".coverage",
     ".env",

@@ -38,12 +38,15 @@ def _lesson(
 
 
 _LESSONS = (
-    _lesson("load-u32", "Load a 32-bit value", "data movement", "Reads a value through a pointer.", "A register receives four bytes from memory.", "Trace the pointer's origin and readable range.", "A register value and a dereferenced value are different evidence."),
-    _lesson("store-u32", "Store a 32-bit value", "data movement", "Writes a value through a pointer.", "Memory changes at the destination address.", "Stores reveal output buffers and state mutation.", "Intel assembly writes the destination operand first."),
+    _lesson("mov-load", "MOV: load from memory", "data movement", "Reads a 32-bit value through a pointer.", "A register receives four bytes from memory.", "Trace the pointer's origin and readable range.", "A register value and a dereferenced value are different evidence."),
+    _lesson("mov-store", "MOV: store to memory", "data movement", "Writes a 32-bit value through a pointer.", "Memory changes at the destination address.", "Stores reveal output buffers and state mutation.", "Intel assembly writes the destination operand first."),
+    _lesson("lea-address", "LEA: calculate an address", "data movement", "Calculates the address of one array element without reading it.", "A scaled effective address becomes the return value; flags are unchanged.", "Scaled indexes reveal provisional element widths.", "LEA calculates an address expression but does not dereference it."),
+    _lesson("lea-arithmetic", "LEA: arithmetic expression", "data movement", "Multiplies an integer by five through an expression a compiler can encode with LEA.", "The destination changes without arithmetic flags changing.", "Check later use before deciding an LEA result is a pointer.", "LEA is not only a pointer-loading instruction."),
+    _lesson("movzx", "MOVZX: zero-extend a byte", "data movement", "Widens an unsigned byte without changing its value.", "The wider destination's upper bits become zero.", "Look for MOVZX or an equivalent mask.", "Width is type evidence, not definitive proof."),
+    _lesson("movsx", "MOVSX: sign-extend a byte", "data movement", "Widens a signed byte while preserving its sign.", "The sign bit is replicated into the wider result.", "Look for MOVSX before signed comparisons or arithmetic.", "The byte 0xff becomes -1, not 255."),
+    _lesson("movsxd", "MOVSXD: sign-extend 32 to 64 bits", "data movement", "Widens a signed 32-bit integer to 64 bits.", "The source sign bit is replicated across the upper 32 bits.", "Common in signed indexes and relative jump-table offsets.", "Do not interpret the source dword as an unsigned address."),
+    _lesson("xchg", "XCHG: exchange register values", "data movement", "Uses explicit inline assembly so the compiled case contains a real XCHG instruction.", "Both selected registers change; flags are unchanged.", "Memory XCHG has additional atomic semantics.", "A normal C swap is not guaranteed to compile to XCHG."),
     _lesson("array-index", "Index a 32-bit array", "data movement", "Reads one element using a base pointer and index.", "The effective address is scaled by element width.", "A scale of four is provisional evidence for 32-bit elements.", "The base may be a field or table, not necessarily an array."),
-    _lesson("zero-extend", "Zero-extend an unsigned byte", "data movement", "Widens an unsigned byte without changing its value.", "The wider destination's upper bits become zero.", "Look for MOVZX or an equivalent mask.", "Width is type evidence, not definitive proof."),
-    _lesson("sign-extend", "Sign-extend a signed byte", "data movement", "Widens a signed byte while preserving its sign.", "The sign bit is replicated into the wider result.", "Look for MOVSX before signed comparisons or arithmetic.", "The byte 0xff becomes -1, not 255."),
-    _lesson("swap-values", "Swap two memory values", "data movement", "Exchanges two values using a temporary.", "Both pointed-to memory locations change.", "Track both reads before the two stores.", "The compiler is not required to emit XCHG."),
     _lesson("add", "Integer addition", "arithmetic", "Adds two signed 32-bit values.", "The return register and arithmetic flags may change.", "Later use determines whether the value is a count, pointer, or scalar.", "ADD does not establish the source-level type."),
     _lesson("subtract", "Integer subtraction", "arithmetic", "Subtracts the second value from the first.", "The destination and arithmetic flags may change.", "A subtraction near a branch can implement comparison or loop control.", "Signedness comes from surrounding operations."),
     _lesson("increment", "Increment a value", "arithmetic", "Adds one to an unsigned value.", "The return register changes.", "Compilers may choose ADD or LEA instead of INC.", "Source syntax cannot be recovered from one mnemonic."),
@@ -91,6 +94,13 @@ def catalog() -> tuple[Lesson, ...]:
 
 def get_lesson(lesson_id: str) -> Lesson | None:
     normalized = lesson_id.strip().lower()
+    normalized = {
+        "load-u32": "mov-load",
+        "store-u32": "mov-store",
+        "zero-extend": "movzx",
+        "sign-extend": "movsx",
+        "swap-values": "xchg",
+    }.get(normalized, normalized)
     return next((lesson for lesson in _LESSONS if lesson.lesson_id == normalized), None)
 
 

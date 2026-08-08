@@ -133,7 +133,7 @@ The target executes, so use a disposable, network-controlled VM.
 
 ## 5. Learning Mode
 
-List or search the 44 bundled real-function lessons without creating an
+List or search the 47 bundled real-function lessons without creating an
 artifact:
 
 ```bash
@@ -148,12 +148,15 @@ pseudo-code through Ghidra:
 ```bash
 aidebug --learn subtract
 aidebug --learn switch-dispatch
+aidebug --learn movsxd
 ```
 
-Learning Mode is local-only and does not create a session database. Exact
-lessons require an ELF compiler and Ghidra. Output includes the source function,
-compiler and artifact provenance, real instruction bytes, and Ghidra's explicit
-non-original-source warning; it never substitutes handwritten pseudo-code.
+Each catalog entry maps to one file under `learning/cases/`; only the selected
+file is compiled. Learning Mode is local-only and does not create a session
+database. Exact lessons require an x86-64 ELF compiler and Ghidra. Output
+includes the exact source-file path and contents, compiler and artifact
+provenance, real instruction bytes, and Ghidra's explicit non-original-source
+warning; it never substitutes handwritten pseudo-code.
 
 ## 6. Export And Handoff
 

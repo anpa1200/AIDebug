@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -25,6 +24,7 @@ class LearningAnalysisError(RuntimeError):
 @dataclass(frozen=True)
 class AnalyzedLesson:
     lesson: Lesson
+    source_file: str
     source: str
     assembly: str
     pseudocode: str
@@ -36,7 +36,7 @@ class AnalyzedLesson:
 
 
 class LiveLearningAnalyzer:
-    """Build one trusted corpus and inspect one real function within it."""
+    """Compile one trusted case file and inspect its real function."""
 
     COMPILE_TIMEOUT_SECONDS = 60.0
     COMPILER_NAMES = ("cc", "gcc", "clang")
@@ -57,21 +57,29 @@ class LiveLearningAnalyzer:
         self._decompiler_factory = decompiler_factory
 
     def analyze(self, lesson: Lesson) -> AnalyzedLesson:
-        corpus = self._read_corpus()
-        source = self._extract_function_source(corpus, lesson.lesson_id)
+        source_file, source = self._read_case(lesson.lesson_id)
+        common_header = self._read_common_header()
 
         with tempfile.TemporaryDirectory(prefix="aidebug-learning-") as temporary:
             working = Path(temporary)
-            source_path = working / "learning-functions.c"
-            artifact_path = working / "learning-functions.so"
-            source_path.write_text(corpus, encoding="utf-8")
+            source_path = working / source_file
+            header_path = working / "case_common.h"
+            artifact_path = working / f"{lesson.lesson_id}.so"
+            source_path.write_text(source, encoding="utf-8")
             source_path.chmod(0o600)
+            header_path.write_text(common_header, encoding="utf-8")
+            header_path.chmod(0o600)
             self._compile(source_path, artifact_path)
 
             info = self._static_analyzer_factory().analyze(os.fspath(artifact_path))
             if info.file_format != "ELF":
                 raise LearningAnalysisError(
                     f"Learning compiler produced {info.file_format}, but an ELF artifact is required"
+                )
+            if (info.arch, info.bits) != ("x86-64", 64):
+                raise LearningAnalysisError(
+                    "The instruction learning cases currently require an x86-64 ELF compiler; "
+                    f"the selected compiler produced {info.arch} {info.bits}-bit code"
                 )
             symbol = self._function_symbol(info, lesson.function_name)
             address = int(symbol["address"])
@@ -103,6 +111,7 @@ class LiveLearningAnalyzer:
 
             return AnalyzedLesson(
                 lesson=lesson,
+                source_file=f"learning/cases/{source_file}",
                 source=source,
                 assembly=assembly,
                 pseudocode=decompiled.code,
@@ -144,27 +153,25 @@ class LiveLearningAnalyzer:
         return os.fspath(path)
 
     @staticmethod
-    def _read_corpus() -> str:
-        resource = files("learning").joinpath("functions.c")
+    def _read_case(lesson_id: str) -> tuple[str, str]:
+        filename = f"{lesson_id}.c"
+        resource = files("learning").joinpath("cases", filename)
+        try:
+            return filename, resource.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise LearningAnalysisError(
+                f"Unable to read bundled learning case {filename}: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _read_common_header() -> str:
+        resource = files("learning").joinpath("cases", "case_common.h")
         try:
             return resource.read_text(encoding="utf-8")
         except OSError as exc:
-            raise LearningAnalysisError(f"Unable to read bundled learning corpus: {exc}") from exc
-
-    @staticmethod
-    def _extract_function_source(corpus: str, lesson_id: str) -> str:
-        escaped = re.escape(lesson_id)
-        pattern = re.compile(
-            rf"/\* AIDEBUG_LESSON_BEGIN {escaped} \*/\s*(.*?)\s*"
-            rf"/\* AIDEBUG_LESSON_END {escaped} \*/",
-            re.DOTALL,
-        )
-        match = pattern.search(corpus)
-        if match is None:
             raise LearningAnalysisError(
-                f"Bundled source is missing function body for lesson {lesson_id}"
-            )
-        return match.group(1).strip()
+                f"Unable to read bundled learning case header: {exc}"
+            ) from exc
 
     def _compile(self, source_path: Path, artifact_path: Path) -> None:
         command = [

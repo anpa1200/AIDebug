@@ -14,7 +14,7 @@ Malware reverse-engineering CLI/TUI with deterministic offline triage, Ghidra
 reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning, ATT&CK candidates, YARA seeds, and analyst reports.
 
-> **Release status:** the source tree is the AIDebug v1.3.1 candidate. Until a
+> **Release status:** the source tree is the AIDebug v1.3.2 candidate. Until a
 > matching release is tagged and published, PyPI continues to serve historical
 > v1.1.0; install from this repository for the current feature set.
 
@@ -69,7 +69,7 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | Full reconstruction file | One provenance-marked C-like file for every discovered function |
 | LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
 | Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
-| Live Learning Mode | 44 real C functions compiled to ELF, disassembled by AIDebug, and reconstructed by Ghidra |
+| Live Learning Mode | 47 individual C case files compiled to ELF, disassembled by AIDebug, and reconstructed by Ghidra |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -153,18 +153,24 @@ content to an AI provider. Listing and searching do not compile anything:
 
 ```bash
 aidebug --learn
+aidebug --learn mov-load
+aidebug --learn lea-arithmetic
+aidebug --learn movsxd
+aidebug --learn xchg
 aidebug --learn subtract
 aidebug --learn "loops and arrays"
 ```
 
-Opening an exact lesson compiles one of 44 bundled, safe C functions into a
-temporary ELF shared object. That artifact is never loaded or executed.
+Every lesson is a separate file under `learning/cases/`. Opening an exact
+lesson compiles only that bundled, safe C file into a temporary ELF shared
+object. That artifact is never loaded or executed.
 AIDebug resolves the real symbol and its size, decodes the complete
 compiler-generated function with addresses and instruction bytes, and asks the
 same Ghidra backend used by normal analysis to reconstruct pseudo-code from the
-machine code. The lesson shows the actual compiled source function, compiler
-identity, artifact SHA-256, symbol address, real assembly, Ghidra output, and
-the non-original-source warning. There is no handwritten pseudo-code fallback.
+machine code. The lesson shows the exact source-file path and contents,
+compiler identity, artifact SHA-256, symbol address, real assembly, Ghidra
+output, and the non-original-source warning. There is no handwritten
+pseudo-code fallback.
 
 Exact lessons require an ELF-capable `cc`, `gcc`, or `clang` and Ghidra's
 `analyzeHeadless`. Override discovery when necessary:
@@ -296,7 +302,7 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 | Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
 | Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
 | Active debug | Local ELF execution through GDB/MI with analyst-controlled breakpoints and instruction stepping |
-| Learning | 44 bundled local lessons; x86/x64-centered with Windows-analysis examples |
+| Learning | 47 individually compiled x86-64 source cases with real assembly and Ghidra output |
 | Reports | HTML, versioned AIDebug JSON, and YARA candidates |
 
 ## Safety

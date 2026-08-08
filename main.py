@@ -212,7 +212,10 @@ def run_learning(
     normalized = (topic or "list").strip().lower()
     exact = get_lesson(normalized)
     if exact is not None:
-        print(f"[*] Compiling trusted learning function: {_terminal_text(exact.function_name)}")
+        print(
+            "[*] Compiling trusted learning case: "
+            f"learning/cases/{_terminal_text(exact.lesson_id)}.c"
+        )
         print("[*] The temporary ELF artifact will be analyzed and will not be executed.")
         print("[*] Recovering real machine instructions and Ghidra pseudo-code…")
         try:

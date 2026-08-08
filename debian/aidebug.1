@@ -1,4 +1,4 @@
-.TH AIDEBUG 1 "August 2026" "aidebug 1.3.1" "User Commands"
+.TH AIDEBUG 1 "August 2026" "aidebug 1.3.2" "User Commands"
 .SH NAME
 aidebug \- AI-assisted malware reverse-engineering debugger
 .SH SYNOPSIS
@@ -51,9 +51,10 @@ Run a non-interactive active-debug command. Repeatable.
 Use PATH as the GDB executable for active debug mode.
 .TP
 .BR \-\-learn " " [TOPIC]
-List or search 44 lessons. Opening an exact lesson compiles its trusted C
-function into a temporary, non-executed ELF, displays the complete real
-assembly, and reconstructs pseudo-code with Ghidra.
+List or search 47 lessons. Every lesson has its own source file. Opening an
+exact lesson compiles only that trusted C file into a temporary, non-executed
+ELF, displays the complete real assembly, and reconstructs pseudo-code with
+Ghidra.
 .TP
 .BR \-\-learning-compiler " " PATH
 Use PATH as the ELF compiler for an exact learning lesson.
