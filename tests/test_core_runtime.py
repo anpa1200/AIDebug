@@ -95,8 +95,9 @@ def test_elf_analysis_reports_bounded_undefined_dynamic_symbols():
 
 
 @pytest.mark.skipif(
-    not any(shutil.which(name) for name in CSourceAnalyzer.COMPILER_CANDIDATES),
-    reason='an ELF-capable C compiler is unavailable',
+    not shutil.which('bwrap')
+    or not any(shutil.which(name) for name in CSourceAnalyzer.COMPILER_CANDIDATES),
+    reason='Bubblewrap or an ELF-capable C compiler is unavailable',
 )
 def test_c_source_analysis_compiles_without_execution_and_keeps_local_symbols(tmp_path):
     source = tmp_path / 'fixture.c'

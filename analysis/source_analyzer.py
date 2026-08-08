@@ -14,7 +14,7 @@ import signal
 import stat
 import subprocess
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import config
 
@@ -155,6 +155,7 @@ class CSourceAnalyzer:
                 "read unrelated host files"
             )
         sandbox = os.fspath(Path(sandbox).resolve())
+        private_tmp = PurePosixPath("/", "tmp").as_posix()
         command = [
             sandbox,
             "--die-with-parent",
@@ -171,7 +172,8 @@ class CSourceAnalyzer:
             "--dev",
             "/dev",
             "--tmpfs",
-            "/tmp",
+            # This path is a private tmpfs created inside Bubblewrap.
+            private_tmp,
             "--bind",
             os.fspath(output_path.parent),
             "/work",
@@ -185,7 +187,8 @@ class CSourceAnalyzer:
             "/work",
             "--setenv",
             "TMPDIR",
-            "/tmp",
+            # TMPDIR points to the private tmpfs above.
+            private_tmp,
             "--setenv",
             "LC_ALL",
             "C",

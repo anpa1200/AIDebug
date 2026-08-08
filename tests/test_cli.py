@@ -221,8 +221,9 @@ def test_decompile_requires_an_input_before_database_open(tmp_path):
 
 
 @pytest.mark.skipif(
-    not any(shutil.which(name) for name in ("cc", "gcc", "clang")),
-    reason="an ELF-capable C compiler is unavailable",
+    not shutil.which("bwrap")
+    or not any(shutil.which(name) for name in ("cc", "gcc", "clang")),
+    reason="Bubblewrap or an ELF-capable C compiler is unavailable",
 )
 def test_offline_cli_analyzes_c_source_via_temporary_elf(tmp_path):
     source = tmp_path / "sample.c"
