@@ -8,6 +8,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .catalog import Lesson
+from .live import AnalyzedLesson
 
 
 def render_catalog(lessons: tuple[Lesson, ...], console: Console | None = None) -> None:
@@ -19,17 +20,27 @@ def render_catalog(lessons: tuple[Lesson, ...], console: Console | None = None) 
     for lesson in lessons:
         table.add_row(lesson.lesson_id, lesson.category, lesson.title)
     output.print(table)
-    output.print("Open one lesson with: [cyan]aidebug --learn LESSON_ID[/cyan]")
+    output.print(
+        "Analyze one real compiled function with: "
+        "[cyan]aidebug --learn LESSON_ID[/cyan]"
+    )
 
 
-def render_lesson(lesson: Lesson, console: Console | None = None) -> None:
+def render_lesson(result: AnalyzedLesson, console: Console | None = None) -> None:
     output = console or Console()
+    lesson = result.lesson
     body = Group(
         Text(f"Category: {lesson.category}", style="dim"),
-        Text("\nAssembly", style="bold cyan"),
-        Syntax(lesson.assembly, "asm", theme="ansi_dark", word_wrap=False),
-        Text("Pseudo-code", style="bold green"),
-        Syntax(lesson.pseudocode, "c", theme="ansi_dark", word_wrap=True),
+        Text(f"Function: {lesson.function_name} @ 0x{result.function_address:x}", style="dim"),
+        Text(f"Compiler: {result.compiler}", style="dim"),
+        Text(f"Artifact SHA-256: {result.artifact_sha256}", style="dim"),
+        Text("\nReal C function compiled for this lesson", style="bold magenta"),
+        Syntax(result.source, "c", theme="ansi_dark", word_wrap=True),
+        Text("Compiler-generated assembly (address, bytes, instruction)", style="bold cyan"),
+        Syntax(result.assembly, "asm", theme="ansi_dark", word_wrap=False),
+        Text(f"{result.decompiler}-generated pseudo-code", style="bold green"),
+        Syntax(result.pseudocode, "c", theme="ansi_dark", word_wrap=True),
+        Text(result.warning, style="dim italic"),
         Text("What it means", style="bold"),
         Text(lesson.explanation),
         Text("\nRegister / flag effects", style="bold"),
@@ -39,4 +50,10 @@ def render_lesson(lesson: Lesson, console: Console | None = None) -> None:
         Text("\nCommon misreading", style="bold red"),
         Text(lesson.pitfall),
     )
-    output.print(Panel(body, title=f"{lesson.lesson_id} — {lesson.title}", border_style="blue"))
+    output.print(
+        Panel(
+            body,
+            title=f"{lesson.lesson_id} — {lesson.title} — LIVE ELF ANALYSIS",
+            border_style="blue",
+        )
+    )

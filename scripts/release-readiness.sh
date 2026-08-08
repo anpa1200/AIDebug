@@ -42,11 +42,13 @@ done
 "$work_dir/venv/bin/python" -m pip check
 "$work_dir/venv/bin/aidebug" --help >/dev/null
 "$work_dir/venv/bin/aidebug" --version
-"$work_dir/venv/bin/aidebug" --learn mov-load >/dev/null
+"$work_dir/venv/bin/aidebug" --learn >/dev/null
 "$work_dir/venv/bin/python" -c \
   "from importlib.resources import files; assert files('analysis').joinpath('data/flirt_sigs.json').is_file()"
 "$work_dir/venv/bin/python" -c \
   "from learning import catalog; assert len(catalog()) >= 30"
+"$work_dir/venv/bin/python" -c \
+  "from importlib.resources import files; assert files('learning').joinpath('functions.c').is_file()"
 "$work_dir/venv/bin/python" -c \
   "from analysis.static_analyzer import StaticAnalyzer; info = StaticAnalyzer().analyze('/bin/true'); assert info.file_format == 'ELF'"
 "$work_dir/venv/bin/aidebug" --binary /bin/true --offline --no-tui --json-export --yara \

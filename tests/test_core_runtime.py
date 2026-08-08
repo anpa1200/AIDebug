@@ -119,6 +119,11 @@ def test_c_source_analysis_compiles_without_execution_and_keeps_local_symbols(tm
     assert info.compiled_sha256 == hashlib.sha256(info.raw_data).hexdigest()
     assert info.raw_data.startswith(b'\x7fELF')
     assert {'helper', 'main'} <= {item['name'] for item in info.function_symbols}
+    assert all(
+        item['size'] > 0
+        for item in info.function_symbols
+        if item['name'] in {'helper', 'main'}
+    )
 
     disassembler = Disassembler(info)
     addresses = disassembler.discover_functions(max_functions=10)

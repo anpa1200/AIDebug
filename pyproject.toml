@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "1200km-aidebug"
-version = "1.3.0"
-description = "Malware triage, Ghidra reconstruction, active ELF debugging, and guided assembly learning."
+version = "1.3.1"
+description = "Malware triage, Ghidra reconstruction, active ELF debugging, and live assembly learning."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -80,6 +80,7 @@ include = ["analysis*", "debugger*", "learning*", "reporting*", "storage*", "ui*
 [tool.setuptools.package-data]
 analysis = ["data/*.json", "data/*.java"]
 debugger = ["scripts/*.js"]
+learning = ["functions.c"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

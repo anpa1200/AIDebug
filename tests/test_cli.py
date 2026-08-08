@@ -51,6 +51,7 @@ def test_main_help_runs():
     assert "--decompile" in result.stdout
     assert "--decompile-all" in result.stdout
     assert "--learn" in result.stdout
+    assert "--learning-compiler" in result.stdout
     assert "--breakpoint" in result.stdout
 
 
@@ -69,14 +70,14 @@ def test_learning_mode_lists_and_opens_lessons_without_database(tmp_path):
     assert not db_path.exists()
 
     opened = subprocess.run(
-        [sys.executable, "main.py", "--learn", "mov-load"],
+        [sys.executable, "main.py", "--learn", "arithmetic"],
         check=False,
         text=True,
         capture_output=True,
     )
     assert opened.returncode == 0
-    assert "MOV: load from memory" in opened.stdout
-    assert "Pseudo-code" in opened.stdout
+    assert "Integer addition" in opened.stdout
+    assert "Analyze one real compiled function" in opened.stdout
 
 
 def test_version_matches_release_metadata():

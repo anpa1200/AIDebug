@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 1.3.1 - 2026-08-08
+
+- Replaced handwritten Learning Mode assembly and pseudo-code cards with 44
+  real, safe C functions compiled into a temporary ELF artifact that is never
+  executed. AIDebug now resolves the selected symbol, displays its complete
+  compiler-generated instructions and bytes, and uses Ghidra to reconstruct
+  pseudo-code from that machine code.
+- Preserved ELF symbol sizes during static analysis so live lessons can decode
+  the complete compiled function, including switch case blocks that recursive
+  control-flow discovery cannot reach through an unresolved jump table.
+- Added compiler, function address, artifact SHA-256, decompiler provenance,
+  source function, and reconstruction warnings to every analyzed lesson.
+
 ## 1.3.0 - 2026-08-08
 
 - Added `--decompile-all FILE.c` to reconstruct every discovered function in
