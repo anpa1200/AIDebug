@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.3.3 - 2026-08-08
+
+- Integrated real Learning Mode into AIDebug's original full-screen Textual
+  GUI. The left catalog selects one standalone source case while synchronized
+  panes show its exact C source, compiler-generated assembly, Ghidra
+  pseudo-code, lesson guidance, and build provenance.
+- Changed `aidebug --learn` and exact lesson commands to open the interactive
+  GUI by default. The existing non-interactive catalog and lesson report remain
+  available with `--no-tui` for scripts and release smoke tests.
+
 ## 1.3.2 - 2026-08-08
 
 - Replaced the shared Learning Mode translation unit with 47 independently

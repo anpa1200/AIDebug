@@ -70,7 +70,7 @@ def test_learning_mode_lists_and_opens_lessons_without_database(tmp_path):
     assert not db_path.exists()
 
     opened = subprocess.run(
-        [sys.executable, "main.py", "--learn", "arithmetic"],
+        [sys.executable, "main.py", "--learn", "arithmetic", "--no-tui"],
         check=False,
         text=True,
         capture_output=True,

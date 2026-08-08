@@ -1,3 +1,10 @@
+aidebug (1.3.3-0kali1) kali-dev; urgency=medium
+
+  * Integrate real learning cases into the original full-screen Textual GUI.
+  * Retain text-only learning reports behind the --no-tui option.
+
+ -- Andrey Pautov <1200km@gmail.com>  Sat, 08 Aug 2026 22:10:00 +0300
+
 aidebug (1.3.2-0kali1) kali-dev; urgency=medium
 
   * Package one independently compiled source file per learning case.

@@ -237,6 +237,42 @@ def run_learning(
     return 0
 
 
+def run_learning_tui(
+    topic: str,
+    *,
+    compiler: str | None = None,
+    ghidra_headless: str | None = None,
+) -> int:
+    """Open real learning cases inside AIDebug's original Textual workspace."""
+    from learning import LearningAnalysisError, catalog, find_lessons, get_lesson
+    from ui import LearningModeApp
+
+    normalized = (topic or "list").strip().lower()
+    exact = get_lesson(normalized)
+    if exact is not None:
+        lessons = catalog()
+        initial_lesson_id = exact.lesson_id
+    else:
+        lessons = find_lessons(normalized)
+        initial_lesson_id = lessons[0].lesson_id if len(lessons) == 1 else None
+    if not lessons:
+        raise CLIError(
+            f"No learning lesson matches {_terminal_text(topic)!r}. "
+            "Run aidebug --learn to open the complete catalog."
+        )
+    try:
+        app = LearningModeApp(
+            lessons,
+            initial_lesson_id=initial_lesson_id,
+            compiler=compiler,
+            ghidra_headless=ghidra_headless,
+        )
+    except LearningAnalysisError as exc:
+        raise CLIError(str(exc)) from exc
+    app.run()
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # CLI (no-TUI) mode
 # ---------------------------------------------------------------------------
@@ -957,7 +993,7 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         const="list",
         metavar="TOPIC",
-        help="List lessons or compile/decompile one real learning function",
+        help="Open real learning cases in the main GUI (add --no-tui for text output)",
     )
     parser.add_argument(
         "--learning-compiler",
@@ -1028,7 +1064,6 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or args.mode != "static"
             or args.pid
             or args.frida_host
-            or args.no_tui
             or args.offline
             or args.accept_ai_cost
             or args.out_dir != "."
@@ -1149,7 +1184,8 @@ def _execute(args) -> int:
     store = None
     try:
         if getattr(args, "learn", None) is not None:
-            return run_learning(
+            runner = run_learning if args.no_tui else run_learning_tui
+            return runner(
                 args.learn,
                 compiler=getattr(args, "learning_compiler", None),
                 ghidra_headless=getattr(args, "ghidra_headless", None),

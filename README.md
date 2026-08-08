@@ -14,7 +14,7 @@ Malware reverse-engineering CLI/TUI with deterministic offline triage, Ghidra
 reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning, ATT&CK candidates, YARA seeds, and analyst reports.
 
-> **Release status:** the source tree is the AIDebug v1.3.2 candidate. Until a
+> **Release status:** the source tree is the AIDebug v1.3.3 candidate. Until a
 > matching release is tagged and published, PyPI continues to serve historical
 > v1.1.0; install from this repository for the current feature set.
 
@@ -149,7 +149,10 @@ Windows targets. GDB is a system dependency rather than a Python package.
 ### Learning mode
 
 Learning Mode is local, does not open the session database, and never sends
-content to an AI provider. Listing and searching do not compile anything:
+content to an AI provider. It opens in AIDebug's original full-screen GUI: the
+left pane lists real cases, the center panes show genuine disassembly and exact
+source, and the right tabs show Ghidra pseudo-code, lesson guidance, and build
+evidence. Selecting a case compiles only that case:
 
 ```bash
 aidebug --learn
@@ -159,6 +162,13 @@ aidebug --learn movsxd
 aidebug --learn xchg
 aidebug --learn subtract
 aidebug --learn "loops and arrays"
+```
+
+For text-only output or automation, add `--no-tui`:
+
+```bash
+aidebug --learn --no-tui
+aidebug --learn movsxd --no-tui
 ```
 
 Every lesson is a separate file under `learning/cases/`. Opening an exact

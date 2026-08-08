@@ -133,23 +133,26 @@ The target executes, so use a disposable, network-controlled VM.
 
 ## 5. Learning Mode
 
-List or search the 47 bundled real-function lessons without creating an
-artifact:
+Open the 47 bundled real-function lessons in AIDebug's original full-screen
+GUI. A search topic filters the left catalog without compiling an artifact:
 
 ```bash
 aidebug --learn
 aidebug --learn "loops and arrays"
 ```
 
-Open an exact lesson to compile its trusted C function into a temporary,
-non-executed ELF, decode the complete symbol through AIDebug, and reconstruct
-pseudo-code through Ghidra:
+Selecting a lesson compiles its trusted C function into a temporary,
+non-executed ELF, decodes the complete symbol through AIDebug, and reconstructs
+pseudo-code through Ghidra. An exact command preselects and opens that lesson:
 
 ```bash
 aidebug --learn subtract
 aidebug --learn switch-dispatch
 aidebug --learn movsxd
 ```
+
+Add `--no-tui` to list lessons or print one analyzed lesson without opening the
+interactive GUI.
 
 Each catalog entry maps to one file under `learning/cases/`; only the selected
 file is compiled. Learning Mode is local-only and does not create a session
