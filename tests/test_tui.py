@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from analysis.ai_analyzer import AIAnalysis
 from analysis.disassembler import Function, Instruction
+from learning import AnalyzedLesson, catalog
+from ui.learning_tui import LearningModeApp
 from ui.tui import AIDebugApp, AnalysisReady
 
 
@@ -176,5 +178,73 @@ def test_tui_blocks_unacknowledged_remote_bulk_action():
             status = app.query_one("#status-bar").render().plain
             assert "Bulk remote analysis is locked" in status
             assert not app._analyses
+
+    asyncio.run(scenario())
+
+
+class FakeLearningAnalyzer:
+    compiler = "/usr/bin/fake-gcc"
+
+    def analyze(self, lesson):
+        return AnalyzedLesson(
+            lesson=lesson,
+            source_file=f"learning/cases/{lesson.lesson_id}.c",
+            source=(
+                '#include "case_common.h"\n\n'
+                f"LEARN int {lesson.function_name}(int value) {{\n"
+                "    return value;\n"
+                "}\n"
+            ),
+            assembly="0x00001000  89 f8  mov eax, edi\n0x00001002  c3  ret",
+            pseudocode=f"int {lesson.function_name}(int value) {{ return value; }}",
+            function_address=0x1000,
+            artifact_sha256="b" * 64,
+            compiler="fake-gcc 1.0",
+            decompiler="ghidra",
+            warning="Reconstructed from machine code; not original source.",
+        )
+
+
+def test_learning_mode_uses_original_tui_layout_and_live_result_panes():
+    async def scenario():
+        lessons = catalog()[:2]
+        app = LearningModeApp(
+            lessons,
+            initial_lesson_id=lessons[0].lesson_id,
+            live_analyzer=FakeLearningAnalyzer(),
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert app.query_one("#func-table").row_count == 2
+            assert {pane.id for pane in app.query("TabbedContent TabPane")} == {
+                "tab-ai",
+                "tab-cfg",
+                "tab-patterns",
+                "tab-decompile",
+            }
+            assert app._current_lesson_id == lessons[0].lesson_id
+
+            source = "\n".join(line.text for line in app.query_one("#reg-view").lines)
+            assembly = "\n".join(line.text for line in app.query_one("#disasm-log").lines)
+            pseudo = "\n".join(line.text for line in app.query_one("#decompile-log").lines)
+            app.query_one("#right-tabs").active = "tab-patterns"
+            await pilot.pause()
+            evidence = "\n".join(line.text for line in app.query_one("#patterns-log").lines)
+            assert lessons[0].function_name in source
+            # Textual 0.52 clips RichLog content at the rendered pane width;
+            # validate the real instruction family without depending on hidden
+            # off-screen operand text surviving in its internal line buffer.
+            assert "mov eax" in assembly
+            assert "ret" in assembly
+            assert lessons[0].function_name in pseudo
+            assert "fake-gcc 1.0" in evidence
+
+            table = app.query_one("#func-table")
+            table.focus()
+            table.move_cursor(row=1)
+            await pilot.press("enter")
+            await pilot.pause(0.2)
+            assert app._current_lesson_id == lessons[1].lesson_id
+            assert set(app._results) == {lesson.lesson_id for lesson in lessons}
 
     asyncio.run(scenario())

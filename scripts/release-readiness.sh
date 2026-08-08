@@ -42,7 +42,7 @@ done
 "$work_dir/venv/bin/python" -m pip check
 "$work_dir/venv/bin/aidebug" --help >/dev/null
 "$work_dir/venv/bin/aidebug" --version
-"$work_dir/venv/bin/aidebug" --learn >/dev/null
+"$work_dir/venv/bin/aidebug" --learn --no-tui >/dev/null
 "$work_dir/venv/bin/python" -c \
   "from importlib.resources import files; assert files('analysis').joinpath('data/flirt_sigs.json').is_file()"
 "$work_dir/venv/bin/python" -c \
