@@ -1,5 +1,11 @@
 from .cfg import CFG, CFGBuilder, CFGSVGRenderer, CFGTextRenderer
-from .decompiler import DecompiledFunction, DecompilerError, GhidraDecompiler
+from .decompiler import (
+    DecompiledFunction,
+    DecompilerError,
+    GhidraDecompiler,
+    render_full_decompilation,
+    write_full_decompilation,
+)
 from .disassembler import Disassembler, Function, Instruction
 from .flirt import FlirtMatch, FlirtMatcher
 from .pattern_detector import MalwarePattern, PatternDetector
@@ -10,6 +16,7 @@ __all__ = [
     'StaticAnalyzer', 'CSourceAnalyzer', 'BinaryInfo', 'SectionInfo', 'ImportInfo',
     'Disassembler', 'Function', 'Instruction',
     'GhidraDecompiler', 'DecompiledFunction', 'DecompilerError',
+    'render_full_decompilation', 'write_full_decompilation',
     'AIAnalyzer', 'AIAnalysis', 'AIAnalyzerError', 'OfflineAnalyzer',
     'CFGBuilder', 'CFGTextRenderer', 'CFGSVGRenderer', 'CFG',
     'PatternDetector', 'MalwarePattern', 'FlirtMatcher', 'FlirtMatch',

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "1200km-aidebug"
-version = "1.2.0"
-description = "Malware triage with offline heuristics, optional AI, ATT&CK candidates, YARA seeds, and reports."
+version = "1.3.0"
+description = "Malware triage, Ghidra reconstruction, active ELF debugging, and guided assembly learning."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -75,7 +75,7 @@ py-modules = ["main", "config"]
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["analysis*", "debugger*", "reporting*", "storage*", "ui*"]
+include = ["analysis*", "debugger*", "learning*", "reporting*", "storage*", "ui*"]
 
 [tool.setuptools.package-data]
 analysis = ["data/*.json", "data/*.java"]

@@ -63,12 +63,29 @@ aidebug --source sample.c --offline --no-tui --decompile \
   --ghidra-headless /opt/ghidra/support/analyzeHeadless
 ```
 
+Write one combined reconstruction for every discovered function:
+
+```bash
+aidebug --binary sample.elf --offline --no-tui \
+  --decompile-all case/sample-full.c
+```
+
+The destination is created once with owner-only permissions. AIDebug refuses to
+overwrite it. “All” remains subject to the 300-function discovery ceiling and
+does not imply that stripped, indirect, packed, or unreachable functions were
+recovered.
+
 Ghidra must be installed and its `support/analyzeHeadless` launcher available on
 `PATH`, in a common installation location, via `AIDEBUG_GHIDRA_HEADLESS`, or via
 `--ghidra-headless`. The result is stored per function and appears in the TUI,
 HTML report, and JSON export. It is reconstructed C-like code rather than the
 original source, so confirm control flow and inferred data types against the
 underlying instructions before relying on it in an investigation.
+
+When remote AI analyzes a function with decompiler output, it also returns a
+structured cross-check status, confidence, findings, and optional corrected
+pseudo-code. This comparison consumes decompiled text at the remote-data
+boundary and is a second hypothesis—not semantic-equivalence proof.
 
 ## 3. Review Findings
 
@@ -98,7 +115,35 @@ may attach later when a watched module loads; it is not capture evidence. Verify
 address mapping and coverage; this mode is not packet capture, automatic
 unpacking, or exhaustive execution tracing.
 
-## 5. Export And Handoff
+### Active local ELF debugging
+
+Active mode is distinct from Frida tracing. It launches a local ELF under GDB
+and waits at an analyst-selected symbol or address:
+
+```bash
+aidebug --binary ./sample.elf --mode debug --breakpoint main
+```
+
+Use `break`, `continue`, `step`, `next`, `finish`, `registers`, `changes`, `io`,
+and `disassemble` inside the debugger prompt. Function inputs and outputs are
+calling-convention candidates unless GDB provides an explicit return value;
+check debug types, stack arguments, and the callee body before treating them as
+confirmed. Repeatable `--debug-command` options support controlled automation.
+The target executes, so use a disposable, network-controlled VM.
+
+## 5. Learning Mode
+
+List all 44 bundled lessons or open/search a topic without loading a sample:
+
+```bash
+aidebug --learn
+aidebug --learn xor-decoder
+aidebug --learn "Windows behavior"
+```
+
+Learning mode is local-only and does not create a session database.
+
+## 6. Export And Handoff
 
 Use the versioned AIDebug JSON through a reviewed custom adapter and the HTML
 report for analyst notes. JSON is not STIX or a vendor-native SIEM/OpenCTI

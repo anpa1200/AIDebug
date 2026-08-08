@@ -11,9 +11,12 @@ from pathlib import Path
 REQUIRED_WHEEL_SUFFIXES = {
     "analysis/data/AIDebugDecompile.java",
     "analysis/data/flirt_sigs.json",
+    "debugger/active.py",
     "debugger/scripts/network_tracer.js",
     "debugger/scripts/tracer.js",
     "debugger/scripts/unpack_detector.js",
+    "learning/catalog.py",
+    "learning/renderer.py",
 }
 REQUIRED_SDIST_SUFFIXES = {
     "CHANGELOG.md",
@@ -33,11 +36,14 @@ REQUIRED_SDIST_SUFFIXES = {
     "debugger/scripts/network_tracer.js",
     "debugger/scripts/tracer.js",
     "debugger/scripts/unpack_detector.js",
+    "debugger/active.py",
     "docs/release-readiness.md",
     "examples/mock-output/aidebug-candidate.yar",
     "examples/mock-output/aidebug-report.html",
     "examples/mock-output/aidebug-session.json",
     "examples/toy_c_analysis.c",
+    "learning/catalog.py",
+    "learning/renderer.py",
     "requirements-ai.txt",
     "requirements-dynamic.txt",
     "requirements.txt",

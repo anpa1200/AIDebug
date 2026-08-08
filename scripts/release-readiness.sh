@@ -19,7 +19,7 @@ gate_python="$work_dir/gate-venv/bin/python"
 "$gate_python" -m pytest -q
 "$gate_python" -c \
   "import frida; from debugger.engine import DebugEngine; assert DebugEngine().is_available"
-"$gate_python" -m bandit -q -r analysis debugger reporting storage ui main.py config.py \
+"$gate_python" -m bandit -q -r analysis debugger learning reporting storage ui main.py config.py \
   --severity-level medium --confidence-level medium
 "$gate_python" -m pip check
 "$gate_python" -m pip_audit --strict --requirement requirements.txt
@@ -42,8 +42,11 @@ done
 "$work_dir/venv/bin/python" -m pip check
 "$work_dir/venv/bin/aidebug" --help >/dev/null
 "$work_dir/venv/bin/aidebug" --version
+"$work_dir/venv/bin/aidebug" --learn mov-load >/dev/null
 "$work_dir/venv/bin/python" -c \
   "from importlib.resources import files; assert files('analysis').joinpath('data/flirt_sigs.json').is_file()"
+"$work_dir/venv/bin/python" -c \
+  "from learning import catalog; assert len(catalog()) >= 30"
 "$work_dir/venv/bin/python" -c \
   "from analysis.static_analyzer import StaticAnalyzer; info = StaticAnalyzer().analyze('/bin/true'); assert info.file_format == 'ELF'"
 "$work_dir/venv/bin/aidebug" --binary /bin/true --offline --no-tui --json-export --yara \

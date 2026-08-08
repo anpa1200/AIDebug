@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-08-08
+
+- Added `--decompile-all FILE.c` to reconstruct every discovered function in
+  one provenance-marked, owner-only C-like output without overwriting an
+  existing analyst file.
+- Added structured LLM cross-checks of Ghidra output against bounded assembly,
+  control flow, calls, strings, patterns, and runtime evidence whenever remote
+  AI analyzes a decompiled function. Results distinguish consistency,
+  uncertainty, and contradiction; they never claim recovery of original code.
+- Added analyst-controlled local ELF debugging through GDB/MI with symbolic or
+  address breakpoints, continue, instruction step/next, function finish,
+  complete register access, core-register deltas, disassembly context, and
+  calling-convention input/return candidates.
+- Added a local `--learn` mode with 44 searchable x86/x64 instruction,
+  structure-recovery, Windows-behavior, and internals lessons. Every lesson
+  includes assembly, pseudo-code, state effects, an analyst clue, and a common
+  misreading.
+
 ## 1.2.0 - 2026-08-08
 
 - Added optional `--decompile` integration with Ghidra's headless native-code

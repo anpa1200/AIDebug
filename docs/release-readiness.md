@@ -70,7 +70,7 @@ An owner must verify all of the following outside the source tree:
 ## Current Status
 
 The current public PyPI version is v1.1.0, while the source tree is prepared as
-v1.2.0. Publishing still requires the exact version-matched tag and release
+v1.3.0. Publishing still requires the exact version-matched tag and release
 workflow. The Debian/Kali proposal supports only the tested
 offline base until optional AI/Frida dependency decisions are made, and it has
 not been accepted or validated on current Kali builders. The checked Ubuntu

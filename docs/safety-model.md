@@ -20,6 +20,13 @@ sandbox target and should only be used:
 - against samples the analyst is permitted to examine
 - with network controls appropriate to the investigation
 
+Active debug mode is an execution boundary too. It starts a local ELF through
+GDB/MI and permits breakpoints, continuation, and instruction stepping. Run it
+only in a disposable, authorized, network-controlled analysis VM. AIDebug does
+not sandbox GDB or the inferior and does not make host execution of unknown code
+safe. The learning mode is separate: it uses bundled text only and executes no
+sample.
+
 C source analysis is static preparation, not dynamic execution. AIDebug copies
 one selected `.c` file into a temporary directory, invokes an allowlisted local
 compiler inside a Bubblewrap filesystem sandbox, verifies that the result is
@@ -45,7 +52,7 @@ production blocking decision without analyst review.
 
 Remote analysis sends evidence to Anthropic. Depending on analysis mode, that
 evidence can include the sample filename, full SHA-256 hash, architecture and OS
-metadata, imported APIs, function disassembly, referenced strings,
+metadata, imported APIs, function disassembly, bounded Ghidra reconstruction, referenced strings,
 cross-references, deterministic pattern findings, and optional runtime register
 or stack context. Treat all of it as potentially sensitive incident data.
 
@@ -96,6 +103,11 @@ C-like code, not recovered original C/C++: types, names, expressions, and
 structured control flow can be wrong. The underlying disassembly remains the
 primary local evidence. If Ghidra is unavailable or fails, AIDebug reports the
 failure rather than substituting heuristic pseudo-source.
+`--decompile-all` means every function found within the same 300-function
+discovery ceiling. The combined output is owner-only and never overwrites an
+existing path. An optional LLM cross-check can identify agreements or conflicts
+within its bounded prompt, but cannot prove that reconstruction is equivalent to
+the binary or compensate for functions discovery missed.
 Dynamic instrumentation uses the lower of `--max-functions` and a 50-function
 hook ceiling. Script readiness and hook errors are surfaced by the CLI. A
 zero-hook observer may be waiting for a watched module to load and must not be

@@ -180,6 +180,38 @@ def decompile_functions(binary_info, disassembler, addresses, executable=None) -
     return generated
 
 
+def write_full_decompilation(binary_info, disassembler, addresses, destination: str) -> Path:
+    """Write one full-program C-like reconstruction with explicit provenance."""
+    from analysis import DecompilerError
+    from analysis import write_full_decompilation as write_output
+
+    try:
+        path = write_output(destination, binary_info, disassembler, addresses)
+    except DecompilerError as exc:
+        raise CLIError(str(exc)) from exc
+    print(f"[+] Full decompilation → {_terminal_text(path)}")
+    return path
+
+
+def run_learning(topic: str) -> int:
+    """Render the local, network-free reverse-engineering lesson catalog."""
+    from learning import find_lessons, get_lesson, render_catalog, render_lesson
+
+    normalized = (topic or "list").strip().lower()
+    exact = get_lesson(normalized)
+    if exact is not None:
+        render_lesson(exact)
+        return 0
+    matches = find_lessons(normalized)
+    if not matches:
+        raise CLIError(
+            f"No learning lesson matches {_terminal_text(topic)!r}. "
+            "Run aidebug --learn to list the catalog."
+        )
+    render_catalog(matches)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # CLI (no-TUI) mode
 # ---------------------------------------------------------------------------
@@ -260,6 +292,19 @@ def run_cli(binary_info, disassembler, addresses, store, session_id, analyzer):
                 f"\n--- {backend} decompilation: 0x{addr:08x} ({language}-like) ---\n"
                 f"{_terminal_multiline_text(func.decompiled_code, config.MAX_DECOMPILED_CHARS)}\n"
             )
+            review = getattr(analysis, "decompilation_review", {})
+            if isinstance(review, dict):
+                status = _terminal_text(review.get("status", "NOT_AVAILABLE"), 32)
+                confidence = _terminal_text(review.get("confidence", "LOW"), 16)
+                print(f"[decompilation cross-check] {status} (confidence: {confidence})")
+                for finding in review.get("findings", [])[:16]:
+                    print(f"  - {_terminal_text(finding, 1_000)}")
+                corrected = review.get("corrected_pseudocode", "")
+                if corrected:
+                    print(
+                        "[suggested corrected pseudo-code]\n"
+                        f"{_terminal_multiline_text(corrected, 8_000)}"
+                    )
 
     # Summary
     summary = store.get_risk_summary(session_id)
@@ -529,6 +574,159 @@ def run_dynamic(binary_info, disassembler, addresses, store, session_id,
 
 
 # ---------------------------------------------------------------------------
+# Active local debugger mode
+# ---------------------------------------------------------------------------
+
+def _print_debug_stop(stop, debugger) -> None:
+    address = f"0x{stop.address:x}" if stop.address is not None else "?"
+    function = stop.function or "unknown"
+    location = ""
+    if stop.source:
+        location = f"  {stop.source}"
+        if stop.line is not None:
+            location += f":{stop.line}"
+    print(f"\n[stop] {stop.reason} at {function} ({address}){location}")
+    if stop.function_inputs:
+        values = ", ".join(f"{name}={value}" for name, value in stop.function_inputs.items())
+        print(f"[input candidates] {values}")
+    if stop.function_output:
+        print(f"[function output] {stop.function_output}")
+    if stop.changed_registers:
+        print("[register changes]")
+        for name, (before, after) in sorted(stop.changed_registers.items()):
+            print(f"  {name:<8} {before} → {after}")
+    instructions = debugger.disassemble_current() if stop.registers else []
+    if instructions:
+        print("[next instructions]")
+        for instruction in instructions:
+            print(f"  {_terminal_text(instruction, 500)}")
+
+
+def _print_registers(registers: dict[str, str]) -> None:
+    if not registers:
+        print("(registers unavailable: the inferior is not stopped)")
+        return
+    for name, value in sorted(registers.items()):
+        print(f"  {name:<12} {_terminal_text(value, 256)}")
+
+
+def _run_debug_command(command: str, debugger) -> bool:
+    """Run one analyst command. Return False when the session should close."""
+    command = command.strip()
+    if not command:
+        return True
+    operation, _, argument = command.partition(" ")
+    operation = operation.lower()
+    if operation in {"q", "quit", "exit"}:
+        return False
+    if operation in {"c", "continue"}:
+        _print_debug_stop(debugger.continue_execution(), debugger)
+    elif operation in {"s", "step", "stepi"}:
+        _print_debug_stop(debugger.step_instruction(), debugger)
+    elif operation in {"n", "next", "nexti"}:
+        _print_debug_stop(debugger.next_instruction(), debugger)
+    elif operation in {"f", "finish"}:
+        _print_debug_stop(debugger.finish_function(), debugger)
+    elif operation in {"r", "regs", "registers"}:
+        _print_registers(debugger.registers())
+    elif operation in {"changes", "diff"}:
+        stop = debugger.last_stop
+        if stop is None or not stop.changed_registers:
+            print("(no register changes captured yet)")
+        else:
+            for name, (before, after) in sorted(stop.changed_registers.items()):
+                print(f"  {name:<12} {before} → {after}")
+    elif operation in {"io", "inputs", "outputs"}:
+        stop = debugger.last_stop
+        if stop is None:
+            print("(no stopped function context yet)")
+        else:
+            print("Function input candidates:")
+            _print_registers(stop.function_inputs)
+            print(f"Function output: {stop.function_output or '(not captured yet)'}")
+    elif operation in {"d", "disasm", "disassemble"}:
+        for instruction in debugger.disassemble_current(16):
+            print(f"  {_terminal_text(instruction, 500)}")
+    elif operation in {"b", "break", "breakpoint"}:
+        if not argument.strip():
+            raise CLIError("break requires a symbol or address")
+        number = debugger.add_breakpoint(argument.strip())
+        print(f"[breakpoint] {number}: {_terminal_text(argument.strip(), 512)}")
+    elif operation in {"h", "help", "?"}:
+        print(
+            "Commands: break LOCATION, continue, step, next, finish, registers, "
+            "changes, io, disassemble, quit"
+        )
+    else:
+        raise CLIError(f"Unknown debug command: {_terminal_text(operation)}")
+    return True
+
+
+def run_active_debug(
+    binary_info,
+    binary_path: str,
+    *,
+    breakpoints: list[str] | None = None,
+    program_args: list[str] | None = None,
+    commands: list[str] | None = None,
+    gdb_path: str | None = None,
+) -> bool:
+    """Run an explicit analyst-controlled GDB/MI session for a local ELF."""
+    from debugger import ActiveDebugError, GDBMIDebugger
+
+    if not str(binary_info.file_format).upper().startswith("ELF"):
+        raise CLIError(
+            "Active GDB mode currently supports local ELF targets. "
+            "Use --mode dynamic with Frida for PE/remote targets."
+        )
+    selected_breakpoints = list(breakpoints or ["main"])
+    print("[!] ACTIVE DEBUG MODE EXECUTES THE SELECTED ELF. Use an isolated lab target.")
+    try:
+        with GDBMIDebugger(
+            binary_path,
+            program_args=program_args,
+            executable=gdb_path,
+            arch=binary_info.arch,
+            bits=binary_info.bits,
+            os_target=binary_info.os_target,
+        ) as debugger:
+            for location in selected_breakpoints:
+                number = debugger.add_breakpoint(location)
+                print(f"[*] Breakpoint {number}: {_terminal_text(location, 512)}")
+            _print_debug_stop(debugger.run(), debugger)
+
+            if commands:
+                for command in commands:
+                    print(f"\n(aidebug-db) {_terminal_text(command, 512)}")
+                    if not _run_debug_command(command, debugger):
+                        break
+                return True
+
+            if not sys.stdin.isatty():
+                raise CLIError(
+                    "Interactive debug mode requires a terminal. Use repeatable "
+                    "--debug-command options for non-interactive operation."
+                )
+            print(
+                "[*] Commands: break, continue, step, next, finish, registers, "
+                "changes, io, disassemble, quit"
+            )
+            while True:
+                try:
+                    command = input("(aidebug-db) ")
+                except EOFError:
+                    break
+                try:
+                    if not _run_debug_command(command, debugger):
+                        break
+                except (ActiveDebugError, CLIError, ValueError) as exc:
+                    print(f"[!] {_terminal_text(exc)}", file=sys.stderr)
+            return True
+    except ActiveDebugError as exc:
+        raise CLIError(str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
 # TUI mode
 # ---------------------------------------------------------------------------
 
@@ -677,8 +875,8 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH.c",
         help="Path to C source; compile to a temporary, non-executed ELF for static analysis",
     )
-    parser.add_argument("--mode",           choices=["static", "dynamic"], default="static",
-                        help="Analysis mode (default: static)")
+    parser.add_argument("--mode",           choices=["static", "dynamic", "debug"], default="static",
+                        help="Analysis mode: static, Frida dynamic tracing, or active local ELF debug")
     parser.add_argument("--pid",            type=_positive_int, help="PID to attach (dynamic mode)")
     parser.add_argument("--frida-host",     default=None,
                         help="Remote frida-server host[:port] (e.g. 192.168.56.101 or 192.168.56.101:27042). "
@@ -692,12 +890,49 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--decompile-all",
+        metavar="FILE.c",
+        help=(
+            "Decompile every discovered function with Ghidra and write one combined "
+            "C-like reconstruction; implies --decompile"
+        ),
+    )
+    parser.add_argument(
         "--ghidra-headless",
         metavar="PATH",
         help=(
             "Path to Ghidra support/analyzeHeadless; otherwise use "
             "AIDEBUG_GHIDRA_HEADLESS or automatic discovery"
         ),
+    )
+    parser.add_argument(
+        "--breakpoint",
+        action="append",
+        default=[],
+        metavar="LOCATION",
+        help="Initial symbol/address breakpoint for --mode debug; repeatable (default: main)",
+    )
+    parser.add_argument(
+        "--debug-arg",
+        action="append",
+        default=[],
+        metavar="VALUE",
+        help="Argument passed to the debug target; repeatable",
+    )
+    parser.add_argument(
+        "--debug-command",
+        action="append",
+        default=[],
+        metavar="COMMAND",
+        help="Non-interactive debugger command; repeatable",
+    )
+    parser.add_argument("--gdb", metavar="PATH", help="Path to GDB for --mode debug")
+    parser.add_argument(
+        "--learn",
+        nargs="?",
+        const="list",
+        metavar="TOPIC",
+        help="List local lessons or open/search a reverse-engineering topic",
     )
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
     parser.add_argument("--session",        type=_positive_int, help="Session ID for reporting commands")
@@ -744,7 +979,37 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     wants_report = args.report or args.yara or args.json_export
     selected_input = args.binary or args.source
     decompile = getattr(args, "decompile", None)
+    decompile_all = getattr(args, "decompile_all", None)
     ghidra_headless = getattr(args, "ghidra_headless", None)
+    learn = getattr(args, "learn", None)
+    debug_options = bool(
+        getattr(args, "breakpoint", [])
+        or getattr(args, "debug_arg", [])
+        or getattr(args, "debug_command", [])
+        or getattr(args, "gdb", None)
+    )
+    if learn is not None:
+        conflicting = (
+            selected_input
+            or args.list_sessions
+            or args.session
+            or wants_report
+            or args.mode != "static"
+            or args.pid
+            or args.frida_host
+            or args.no_tui
+            or args.offline
+            or args.accept_ai_cost
+            or args.out_dir != "."
+            or args.db != config.DB_PATH
+            or decompile
+            or decompile_all
+            or ghidra_headless
+            or debug_options
+        )
+        if conflicting:
+            parser.error("--learn cannot be combined with analysis, debug, or reporting options")
+        return
     if args.binary and args.source:
         parser.error("--binary and --source are mutually exclusive")
     if args.offline and args.accept_ai_cost:
@@ -769,7 +1034,9 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or args.accept_ai_cost
             or args.out_dir != "."
             or decompile
+            or decompile_all
             or ghidra_headless
+            or debug_options
         )
         if conflicting:
             parser.error("--list-sessions cannot be combined with analysis or reporting options")
@@ -781,16 +1048,24 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         parser.error("--no-tui applies only to file analysis")
     if decompile and not selected_input:
         parser.error("--decompile requires --binary or --source")
-    if ghidra_headless and not decompile:
-        parser.error("--ghidra-headless requires --decompile")
+    if decompile_all and not selected_input:
+        parser.error("--decompile-all requires --binary or --source")
+    if ghidra_headless and not (decompile or decompile_all):
+        parser.error("--ghidra-headless requires --decompile or --decompile-all")
     if selected_input and args.session:
         parser.error("--session selects an existing session and cannot be combined with file analysis")
     if (args.pid or args.frida_host) and args.mode != "dynamic":
         parser.error("--pid and --frida-host require --mode dynamic")
+    if debug_options and args.mode != "debug":
+        parser.error("--breakpoint, --debug-arg, --debug-command, and --gdb require --mode debug")
     if args.source and args.mode == "dynamic":
         parser.error("--source supports static analysis only; compiled source is never executed")
     if args.mode == "dynamic" and not args.binary:
         parser.error("--mode dynamic requires --binary")
+    if args.mode == "debug" and not args.binary:
+        parser.error("--mode debug requires --binary")
+    if args.mode == "debug" and wants_report:
+        parser.error("--mode debug cannot be combined with reporting commands")
     if args.source and args.yara:
         parser.error(
             "--yara is unavailable for C source because analysis uses a temporary compiled artifact"
@@ -801,7 +1076,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         parser.error("--accept-ai-cost has no effect without file analysis or --yara")
 
     if not selected_input and not wants_report:
-        parser.error("choose --binary, --source, --list-sessions, or a reporting command")
+        parser.error("choose --binary, --source, --learn, --list-sessions, or a reporting command")
 
     if selected_input:
         input_kind = "source" if args.source else "binary"
@@ -841,15 +1116,21 @@ def _execute(args) -> int:
 
     store = None
     try:
+        if getattr(args, "learn", None) is not None:
+            return run_learning(args.learn)
+
         wants_report = args.report or args.yara or args.json_export
         analyzer = None
         prepared_binary = None
         source_argument = getattr(args, "source", None)
         selected_input = args.binary or source_argument
         if selected_input:
-            analyzer = _make_analyzer(args.offline)
+            if args.mode != "debug":
+                analyzer = _make_analyzer(args.offline)
             bulk_analysis = args.mode == "dynamic" or args.no_tui or wants_report
             discovery_limit = args.max_functions if bulk_analysis else None
+            if getattr(args, "decompile_all", None):
+                discovery_limit = None
             if args.mode == "dynamic":
                 discovery_limit = min(
                     args.max_functions,
@@ -865,6 +1146,36 @@ def _execute(args) -> int:
                     os.fspath(Path(args.binary).expanduser()),
                     max_functions=discovery_limit,
                 )
+
+        if prepared_binary is not None:
+            binary_info, disassembler, addresses = prepared_binary
+            wants_decompilation = bool(
+                getattr(args, "decompile", False)
+                or getattr(args, "decompile_all", None)
+            )
+            if wants_decompilation:
+                decompile_functions(
+                    binary_info,
+                    disassembler,
+                    addresses,
+                    getattr(args, "ghidra_headless", None),
+                )
+            if getattr(args, "decompile_all", None):
+                write_full_decompilation(
+                    binary_info,
+                    disassembler,
+                    addresses,
+                    args.decompile_all,
+                )
+            if args.mode == "debug":
+                return 0 if run_active_debug(
+                    binary_info,
+                    args.binary,
+                    breakpoints=args.breakpoint,
+                    program_args=args.debug_arg,
+                    commands=args.debug_command,
+                    gdb_path=args.gdb,
+                ) else 1
 
         store = TraceStore(args.db)
 
@@ -897,13 +1208,6 @@ def _execute(args) -> int:
         if analyzer is None or prepared_binary is None:
             raise CLIError("File analysis was not initialized")
         binary_info, disassembler, addresses = prepared_binary
-        if getattr(args, "decompile", False):
-            decompile_functions(
-                binary_info,
-                disassembler,
-                addresses,
-                getattr(args, "ghidra_headless", None),
-            )
         session_id = store.create_session(binary_info)
         print(f"[*] Session ID: {session_id}")
 
