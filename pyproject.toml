@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "1200km-aidebug"
-version = "1.1.0"
+version = "1.2.0"
 description = "Malware triage with offline heuristics, optional AI, ATT&CK candidates, YARA seeds, and reports."
 readme = "README.md"
 license = "MIT"
@@ -78,7 +78,7 @@ include-package-data = true
 include = ["analysis*", "debugger*", "reporting*", "storage*", "ui*"]
 
 [tool.setuptools.package-data]
-analysis = ["data/*.json"]
+analysis = ["data/*.json", "data/*.java"]
 debugger = ["scripts/*.js"]
 
 [tool.pytest.ini_options]

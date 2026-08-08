@@ -4,8 +4,7 @@ AIDebug — AI-Assisted Malware Debugger
 Usage:
     python main.py --binary <path>                    # static analysis + TUI
     python main.py --binary <path> --no-tui           # CLI mode (print to stdout)
-    python main.py --binary <path> --decompile         # add heuristic pseudo-C
-    python main.py --binary <path> --decompile cpp     # add C++-style reconstruction
+    python main.py --binary <path> --decompile         # add Ghidra C-like output
     python main.py --source <path.c> --offline         # compile to temporary ELF + analyze
     python main.py --binary <path> --pid 1234         # dynamic mode (attach Frida)
     python main.py --list-sessions                    # show past analysis sessions
@@ -149,23 +148,34 @@ def _prepare_static_analysis(info, *, max_functions: int | None = None):
     return info, dis, addresses
 
 
-def decompile_functions(binary_info, disassembler, addresses, language: str) -> int:
-    """Attach bounded heuristic pseudo-source to discovered functions."""
-    from analysis import PseudoDecompiler
+def decompile_functions(binary_info, disassembler, addresses, executable=None) -> int:
+    """Attach bounded, genuine Ghidra decompiler output to discovered functions."""
+    from analysis import DecompilerError, GhidraDecompiler
 
-    renderer = PseudoDecompiler(binary_info, disassembler, language=language)
+    selected = [
+        address
+        for address in addresses
+        if (disassembler.get_function(address) is not None)
+    ]
+    print(f"[*] Decompiling {len(selected)} function(s) with Ghidra headless…")
+    try:
+        results = GhidraDecompiler(binary_info, executable=executable).decompile(selected)
+    except DecompilerError as exc:
+        raise CLIError(str(exc)) from exc
+
     generated = 0
-    for address in addresses:
+    for address, result in results.items():
         function = disassembler.get_function(address)
-        if not function or not function.instructions:
+        if not function:
             continue
-        result = renderer.decompile(function)
         function.decompiled_code = result.code
         function.decompile_language = result.language
+        function.decompile_backend = result.backend
+        function.decompile_warning = result.warning
         generated += 1
     print(
-        f"[*] Generated {generated} heuristic {_terminal_text(language, 24)} "
-        "function reconstruction(s); output is not original source."
+        f"[*] Ghidra decompiled {generated} function(s). "
+        "The reconstructed C-like output is not original source."
     )
     return generated
 
@@ -244,9 +254,10 @@ def run_cli(binary_info, disassembler, addresses, store, session_id, analyzer):
                 print(f"           → MITRE: {_terminal_text(analysis.mitre_technique, 160)}")
 
         if getattr(func, "decompiled_code", ""):
-            language = _terminal_text(getattr(func, "decompile_language", "pseudo-c"), 24)
+            language = _terminal_text(getattr(func, "decompile_language", "c"), 24)
+            backend = _terminal_text(getattr(func, "decompile_backend", "ghidra"), 40)
             print(
-                f"\n--- Heuristic decompilation: 0x{addr:08x} ({language}) ---\n"
+                f"\n--- {backend} decompilation: 0x{addr:08x} ({language}-like) ---\n"
                 f"{_terminal_multiline_text(func.decompiled_code, config.MAX_DECOMPILED_CHARS)}\n"
             )
 
@@ -675,13 +686,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-tui",         action="store_true", help="CLI output, no TUI")
     parser.add_argument(
         "--decompile",
-        nargs="?",
-        const="pseudo-c",
-        choices=["pseudo-c", "cpp"],
-        metavar="LANGUAGE",
+        action="store_true",
         help=(
-            "Generate bounded heuristic pseudo-source for each function; "
-            "LANGUAGE is pseudo-c (default) or cpp"
+            "Decompile discovered functions with Ghidra headless into bounded C-like output"
+        ),
+    )
+    parser.add_argument(
+        "--ghidra-headless",
+        metavar="PATH",
+        help=(
+            "Path to Ghidra support/analyzeHeadless; otherwise use "
+            "AIDEBUG_GHIDRA_HEADLESS or automatic discovery"
         ),
     )
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
@@ -729,6 +744,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     wants_report = args.report or args.yara or args.json_export
     selected_input = args.binary or args.source
     decompile = getattr(args, "decompile", None)
+    ghidra_headless = getattr(args, "ghidra_headless", None)
     if args.binary and args.source:
         parser.error("--binary and --source are mutually exclusive")
     if args.offline and args.accept_ai_cost:
@@ -753,6 +769,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or args.accept_ai_cost
             or args.out_dir != "."
             or decompile
+            or ghidra_headless
         )
         if conflicting:
             parser.error("--list-sessions cannot be combined with analysis or reporting options")
@@ -764,6 +781,8 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         parser.error("--no-tui applies only to file analysis")
     if decompile and not selected_input:
         parser.error("--decompile requires --binary or --source")
+    if ghidra_headless and not decompile:
+        parser.error("--ghidra-headless requires --decompile")
     if selected_input and args.session:
         parser.error("--session selects an existing session and cannot be combined with file analysis")
     if (args.pid or args.frida_host) and args.mode != "dynamic":
@@ -878,13 +897,12 @@ def _execute(args) -> int:
         if analyzer is None or prepared_binary is None:
             raise CLIError("File analysis was not initialized")
         binary_info, disassembler, addresses = prepared_binary
-        decompile_language = getattr(args, "decompile", None)
-        if decompile_language:
+        if getattr(args, "decompile", False):
             decompile_functions(
                 binary_info,
                 disassembler,
                 addresses,
-                decompile_language,
+                getattr(args, "ghidra_headless", None),
             )
         session_id = store.create_session(binary_info)
         print(f"[*] Session ID: {session_id}")

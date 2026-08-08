@@ -3,60 +3,72 @@ from types import SimpleNamespace
 import pytest
 
 import config
-from analysis.decompiler import PseudoDecompiler
-from analysis.disassembler import Function, Instruction
+from analysis.decompiler import DecompilerError, GhidraDecompiler
 
 
-def _binary(arch="x86-64"):
-    return SimpleNamespace(arch=arch, bits=64)
+def _binary(*, image_base=0):
+    return SimpleNamespace(raw_data=b"\x7fELF\x02\x01fixture", image_base=image_base)
 
 
-def test_pseudo_c_reconstructs_data_flow_branches_calls_and_return():
-    callee = Function(0x2000, "known_helper", [Instruction(0x2000, "ret", "", b"")])
-    function = Function(
-        0x1000,
-        "sample_function",
-        [
-            Instruction(0x1000, "mov", "eax, 5", b""),
-            Instruction(0x1002, "cmp", "ecx, 0", b""),
-            Instruction(0x1004, "je", "0x100a", b""),
-            Instruction(0x1006, "call", "0x2000", b""),
-            Instruction(0x1008, "add", "eax, 1", b""),
-            Instruction(0x100A, "ret", "", b""),
-        ],
-    )
-    disassembler = SimpleNamespace(functions={0x1000: function, 0x2000: callee})
-
-    result = PseudoDecompiler(_binary(), disassembler).decompile(function)
-
-    assert result.language == "pseudo-c"
-    assert "uintptr_t sample_function" in result.code
-    assert "eax = 5;" in result.code
-    assert "if (equal(compare(ecx, 0))) goto loc_100a;" in result.code
-    assert "known_helper(/* arguments reconstructed by ABI */)" in result.code
-    assert "loc_100a:" in result.code
-    assert "return rax;" in result.code
-    assert result.confidence == "heuristic"
-    assert "not the original source" in result.warning
+def _launcher(tmp_path):
+    executable = tmp_path / "analyzeHeadless"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o700)
+    return executable
 
 
-def test_cpp_mode_is_bounded_and_sanitizes_untrusted_disassembly(monkeypatch):
+def test_ghidra_backend_returns_bounded_real_decompiler_output(tmp_path, monkeypatch):
+    launcher = _launcher(tmp_path)
     monkeypatch.setattr(config, "MAX_DECOMPILED_CHARS", 180)
-    function = Function(
-        0x1000,
-        "7 bad*/name",
-        [Instruction(0x1000 + index, "mystery", "evil*/\x1b[31m", b"") for index in range(20)],
-    )
+    captured_command = []
 
-    result = PseudoDecompiler(_binary(), language="cpp").decompile(function)
+    def fake_run(self, command, working):
+        captured_command.extend(command)
+        script_index = command.index("AIDebugDecompile.java")
+        output_directory = __import__("pathlib").Path(command[script_index + 1])
+        output_directory.joinpath("1000.c").write_text(
+            "int sample_function(int value) {\n"
+            "  return value + 1;\n"
+            "}\n" + ("x" * 300),
+            encoding="utf-8",
+        )
 
-    assert result.code.startswith("std::uintptr_t fn_7_bad__name")
-    assert "evil*/" not in result.code
-    assert "\x1b" not in result.code
-    assert len(result.code) <= 180
-    assert "output truncated" in result.code
+    monkeypatch.setattr(GhidraDecompiler, "_run", fake_run)
+    result = GhidraDecompiler(
+        _binary(image_base=0x400000), executable=launcher
+    ).decompile([0x1000])[0x1000]
+
+    assert result.language == "c"
+    assert result.backend == "ghidra"
+    assert result.code.startswith("int sample_function")
+    assert len(result.code) == 180
+    assert "not the original source" in result.warning
+    script_index = captured_command.index("AIDebugDecompile.java")
+    assert captured_command[script_index + 3] == str(0x400000)
 
 
-def test_decompiler_rejects_unknown_output_language():
-    with pytest.raises(ValueError, match="Unsupported decompilation language"):
-        PseudoDecompiler(_binary(), language="python")
+def test_ghidra_backend_reports_per_function_failures(tmp_path, monkeypatch):
+    launcher = _launcher(tmp_path)
+
+    def fake_run(self, command, working):
+        script_index = command.index("AIDebugDecompile.java")
+        output_directory = __import__("pathlib").Path(command[script_index + 1])
+        output_directory.joinpath("errors.log").write_text(
+            "1000: function not identified\n", encoding="utf-8"
+        )
+
+    monkeypatch.setattr(GhidraDecompiler, "_run", fake_run)
+    with pytest.raises(DecompilerError, match="function not identified"):
+        GhidraDecompiler(_binary(), executable=launcher).decompile([0x1000])
+
+
+def test_ghidra_backend_rejects_missing_launcher(tmp_path):
+    with pytest.raises(DecompilerError, match="Unable to inspect Ghidra launcher"):
+        GhidraDecompiler(_binary(), executable=tmp_path / "missing")
+
+
+@pytest.mark.parametrize("address", [-1, True, "1000"])
+def test_ghidra_backend_rejects_invalid_addresses(tmp_path, address):
+    backend = GhidraDecompiler(_binary(), executable=_launcher(tmp_path))
+    with pytest.raises(ValueError, match="non-negative integers"):
+        backend.decompile([address])

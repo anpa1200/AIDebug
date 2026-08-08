@@ -1,4 +1,4 @@
-.TH AIDEBUG 1 "June 2026" "aidebug 1.1.0" "User Commands"
+.TH AIDEBUG 1 "August 2026" "aidebug 1.2.0" "User Commands"
 .SH NAME
 aidebug \- AI-assisted malware reverse-engineering debugger
 .SH SYNOPSIS
@@ -13,6 +13,18 @@ MITRE ATT&CK mappings that require analyst validation.
 .TP
 .BR \-\-binary " " FILE
 Analyze a PE or ELF binary.
+.TP
+.BR \-\-source " " FILE.c
+Compile one C translation unit to a temporary, non-executed ELF inside a
+Bubblewrap filesystem sandbox, then analyze that artifact statically.
+.TP
+.B \-\-decompile
+Use Ghidra headless to produce bounded C-like reconstruction for discovered
+functions. The output is not recovered original source.
+.TP
+.BR \-\-ghidra-headless " " PATH
+Use PATH as Ghidra's support/analyzeHeadless launcher. This option requires
+.BR \-\-decompile .
 .TP
 .BR \-\-mode " " MODE
 Analysis mode: static or dynamic.

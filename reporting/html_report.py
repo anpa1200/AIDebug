@@ -214,7 +214,7 @@ a:hover { text-decoration: underline; }
 .pseudo-warning {
     color: #d29922; font-size: 12px; margin: 4px 0 8px;
 }
-.pseudo-code {
+.decompiled-code {
     background: #0d1117; border: 1px solid #21262d;
     border-radius: 6px; overflow: auto; padding: 12px 14px;
     color: #c9d1d9; font-family: 'Cascadia Code', 'Fira Code', monospace;
@@ -376,7 +376,12 @@ class HTMLReporter:
             risk      = _risk_level(trace.get('risk_level') or ai.get('risk_level'))
             disasm    = trace.get('disassembly') or ''
             decompiled_code = trace.get('decompiled_code') or ''
-            decompile_language = trace.get('decompile_language') or 'pseudo-c'
+            decompile_language = trace.get('decompile_language') or 'c'
+            decompile_backend = trace.get('decompile_backend') or 'ghidra'
+            decompile_warning = trace.get('decompile_warning') or (
+                'Reconstructed from machine code; not original source. '
+                'Types, names, and structure require analyst review.'
+            )
 
             name      = _esc(ai.get('suggested_name') or trace.get('name') or f'sub_{addr:08x}')
             summary   = _esc(ai.get('summary', ''))
@@ -423,12 +428,10 @@ class HTMLReporter:
             decompile_html = ''
             if decompiled_code:
                 decompile_html = (
-                    '<div class="section-title">Heuristic Pseudo-source '
-                    f'({_esc(decompile_language)})</div>'
-                    '<div class="pseudo-warning">Reconstructed from machine code; '
-                    'this is not original source and may contain inaccurate types, names, '
-                    'expressions, or control flow.</div>'
-                    f'<pre class="pseudo-code">{_esc(decompiled_code)}</pre>'
+                    f'<div class="section-title">{_esc(decompile_backend)} '
+                    f'Decompiler Output ({_esc(decompile_language)}-like)</div>'
+                    f'<div class="pseudo-warning">{_esc(decompile_warning)}</div>'
+                    f'<pre class="decompiled-code">{_esc(decompiled_code)}</pre>'
                 )
             cfg_html     = self._render_cfg_svg(addr, disassembler, disasm)
             patterns = []

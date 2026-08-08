@@ -14,11 +14,9 @@ Malware reverse-engineering triage CLI/TUI with deterministic offline analysis,
 optional remote AI explanations, ATT&CK candidates, YARA seeds, heuristic IOC
 strings, and analyst reports.
 
-> **Release status:** the public PyPI release is v1.1.0. The offline mode,
-> optional dependency split, hardened dynamic path, and release gates described
-> below are post-v1.1.0 changes on `main`; they need a new semantic version and
-> tag before they are available from PyPI. Use the v1.1.0 tag for historical
-> package documentation.
+> **Release status:** the source tree is AIDebug v1.2.0. Until the `v1.2.0`
+> release is tagged and published, PyPI continues to serve historical v1.1.0;
+> install from this repository to use the Ghidra, ELF, and C-source features.
 
 ## Project Maturity Evidence
 
@@ -67,7 +65,7 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | YARA candidate rules | Detection-engineering seed that must be compiled and tested |
 | Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
 | CFG visualization | Function-level behavior review |
-| Heuristic pseudo-C/C++ reconstruction | Readable function triage; not recovered original source |
+| Ghidra C-like decompilation | Native-code reconstruction for function triage; not recovered original source |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -91,18 +89,21 @@ ELF binaries use the same static-analysis command as PE files:
 aidebug --binary /path/to/sample.elf --offline --no-tui
 ```
 
-Add bounded pseudo-C to CLI, TUI, HTML, and JSON output with `--decompile`.
-Select a conservative C++-style renderer with `--decompile cpp`:
+Add bounded Ghidra decompiler output to the CLI, TUI, HTML, and JSON with
+`--decompile`. Install Ghidra first, or provide its headless launcher explicitly:
 
 ```bash
 aidebug --binary /path/to/sample.elf --offline --no-tui --decompile
-aidebug --binary /path/to/sample.exe --offline --no-tui --decompile cpp
+aidebug --binary /path/to/sample.exe --offline --no-tui --decompile \
+  --ghidra-headless /opt/ghidra/support/analyzeHeadless
 ```
 
-This reconstruction is deterministic and dependency-free. It translates
-common instructions, preserves explicit labels and branches, and leaves
-unrecognized operations as assembly comments. It does not recover original
-types, variable names, expressions, source structure, or comments.
+AIDebug discovers `analyzeHeadless` from `PATH`, common installation locations,
+or `AIDEBUG_GHIDRA_HEADLESS`. It runs one isolated temporary Ghidra project and
+uses Ghidra's native-code decompiler. The C-like result is reconstructed output,
+not original source: inferred types, names, expressions, and structure still
+require analyst review. AIDebug fails clearly when Ghidra is unavailable; it
+does not substitute register-to-text heuristics and call that decompilation.
 
 C source analysis requires an ELF-capable `cc`, `gcc`, or `clang` plus
 Bubblewrap (`bwrap`). AIDebug copies the selected translation unit into a
@@ -112,6 +113,12 @@ analyzes it, and deletes it without execution:
 ```bash
 aidebug --source /path/to/sample.c --offline --no-tui
 ```
+
+On Ubuntu 24.04, AppArmor may block Bubblewrap with `setting up uid map:
+Permission denied` when the system lacks a Bubblewrap user-namespace profile.
+Install and load the upstream `bwrap-userns-restrict` AppArmor profile rather
+than disabling `kernel.apparmor_restrict_unprivileged_userns` globally. See the
+[Ubuntu 24.04 user-namespace guidance](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions).
 
 The C workflow accepts one `.c` translation unit up to 2 MiB. System headers
 are available, but project-local headers and multi-file builds are not yet
@@ -233,8 +240,9 @@ sandbox validation, or analyst judgment. Discovery is bounded and can miss
 indirect, packed, overlaid, stripped, or unreachable code. Heuristic library
 identification can collide. ATT&CK, risk, IOC, and YARA outputs require review.
 Dynamic static-to-runtime address mapping can be incomplete under ASLR/PIE.
-The optional pseudo-C/C++ renderer is a bounded heuristic view over discovered
-instructions, not a compiler-grade decompiler and not recovered source.
+The optional Ghidra integration produces bounded C-like reconstruction from
+machine code. It is compiler-grade decompiler output, but it is still not
+recovered original source and must be checked against disassembly and behavior.
 Tracer startup reports whether each observer is ready and how many hooks are
 installed at that moment; a zero count can increase when a watched module loads
 later and is not evidence that any target call was captured.

@@ -69,6 +69,8 @@ def test_html_report_escapes_hostile_store_fields_and_uses_nonce_csp(tmp_path):
             "disassembly": "0x401000: mov eax, <script>alert(8)</script>\n0x401005: ret",
             "decompiled_code": "</pre><script>alert(11)</script>",
             "decompile_language": 'cpp\" onmouseover=\"alert(12)',
+            "decompile_backend": '<img src=x onerror=alert(13)>',
+            "decompile_warning": '<svg onload=alert(14)>',
             "ai_analysis_json": json.dumps(
                 {
                     "suggested_name": "</h2><script>alert(9)</script>",
@@ -98,7 +100,7 @@ def test_html_report_escapes_hostile_store_fields_and_uses_nonce_csp(tmp_path):
     assert "onmouseover=" not in report
     assert "&lt;script&gt;alert(9)&lt;/script&gt;" in report
     assert "&lt;script&gt;alert(11)&lt;/script&gt;" in report
-    assert "Heuristic Pseudo-source" in report
+    assert "Decompiler Output" in report
     assert 'data-function-index="0"' in report
     nonce_match = re.search(r'<script nonce="([A-Za-z0-9_-]+)">', report)
     assert nonce_match

@@ -41,6 +41,40 @@ class CSourceAnalyzer:
             "(install cc, gcc, or clang)"
         )
 
+    @classmethod
+    def sandbox_available(cls, sandbox: str | None = None) -> bool:
+        """Return whether Bubblewrap can create the namespaces used by this host."""
+        launcher = sandbox or shutil.which("bwrap")
+        if not launcher:
+            return False
+        command = [
+            os.fspath(Path(launcher).resolve()),
+            "--die-with-parent",
+            "--unshare-user",
+            "--unshare-pid",
+            "--unshare-ipc",
+            "--unshare-uts",
+            "--new-session",
+        ]
+        for host_path in ("/usr", "/bin", "/lib", "/lib64"):
+            if Path(host_path).exists():
+                command.extend(("--ro-bind", host_path, host_path))
+        private_tmp = PurePosixPath("/", "tmp").as_posix()
+        command.extend(("--dev", "/dev", "--tmpfs", private_tmp, "/bin/true"))
+        try:
+            result = subprocess.run(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
+
     def analyze(self, path: str | os.PathLike[str]) -> BinaryInfo:
         source_path = Path(path).expanduser().resolve()
         if source_path.suffix.lower() != ".c":
@@ -237,6 +271,19 @@ class CSourceAnalyzer:
             diagnostic = (stderr or stdout).decode("utf-8", errors="replace").strip()
             if len(diagnostic) > 4_000:
                 diagnostic = diagnostic[:4_000] + "\n[compiler diagnostics truncated]"
+            namespace_denied = (
+                "bwrap: setting up uid map: Permission denied" in diagnostic
+                or "bwrap: No permissions to create new namespace" in diagnostic
+            )
+            if namespace_denied:
+                raise RuntimeError(
+                    "Bubblewrap could not create its user namespace. On Ubuntu 24.04 this "
+                    "normally means AppArmor user-namespace restrictions are enabled but "
+                    "the bwrap-userns-restrict profile is not installed or loaded. "
+                    "Install and load the AppArmor bwrap profile; do not disable the "
+                    "system-wide user-namespace restriction. Original diagnostic: "
+                    f"{diagnostic}"
+                )
             raise ValueError(
                 "C compilation failed"
                 + (f":\n{diagnostic}" if diagnostic else " without diagnostics")

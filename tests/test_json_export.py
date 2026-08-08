@@ -27,8 +27,10 @@ def test_json_export_builds_risk_summary_and_iocs():
             "strings_referenced": json.dumps(["c2.example.test", ".text"]),
             "calls_to": json.dumps([0x402000]),
             "called_from": json.dumps([]),
-            "decompiled_code": "uintptr_t decode_config(void) { return rax; }",
-            "decompile_language": "pseudo-c",
+            "decompiled_code": "int decode_config(void) { return 0; }",
+            "decompile_language": "c",
+            "decompile_backend": "ghidra",
+            "decompile_warning": "Ghidra reconstruction; not original source.",
             "ai_analysis_json": json.dumps(
                 {
                     "summary": "Decodes configuration data",
@@ -105,7 +107,8 @@ def test_json_export_builds_risk_summary_and_iocs():
     assert doc["functions"][0]["name"] == "decode_config"
     assert doc["functions"][0]["size_bytes"] is None
     assert doc["functions"][0]["deterministic_patterns"][0]["severity"] == "HIGH"
-    assert doc["functions"][0]["decompilation"]["confidence"] == "heuristic"
+    assert doc["functions"][0]["decompilation"]["confidence"] == "reconstructed"
+    assert doc["functions"][0]["decompilation"]["backend"] == "ghidra"
     assert "decode_config" in doc["functions"][0]["decompilation"]["code"]
     assert doc["network_events"][0]["ip"] == "203.0.113.8"
     assert doc["runtime_events"][0]["payload"]["confidence"] == "heuristic"

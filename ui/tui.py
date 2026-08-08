@@ -285,7 +285,7 @@ Screen {
                         yield RichLog(id="cfg-log", highlight=True, markup=True)
                     with TabPane("Patterns", id="tab-patterns"):
                         yield RichLog(id="patterns-log", highlight=True, markup=True)
-                    with TabPane("Pseudo-code", id="tab-decompile"):
+                    with TabPane("Decompiled C", id="tab-decompile"):
                         yield RichLog(id="decompile-log", highlight=True, markup=True)
 
         # Bottom — chat bar
@@ -511,15 +511,21 @@ Screen {
         code = getattr(func, "decompiled_code", "")
         if not code:
             log.write(
-                "[dim]No pseudo-source was requested. Restart with "
-                "--decompile or --decompile cpp.[/dim]"
+                "[dim]No Ghidra decompiler output was requested. "
+                "Restart with --decompile.[/dim]"
             )
             return
-        language = getattr(func, "decompile_language", "pseudo-c") or "pseudo-c"
-        log.write(
-            "[bold yellow]Heuristic reconstruction — not original source[/bold yellow] "
-            f"[dim]({_markup_text(language, 32)})[/dim]\n"
+        language = getattr(func, "decompile_language", "c") or "c"
+        backend = getattr(func, "decompile_backend", "ghidra") or "ghidra"
+        warning = getattr(func, "decompile_warning", "") or (
+            "Reconstructed from machine code; not original source. "
+            "Types, names, and structure require analyst review."
         )
+        log.write(
+            f"[bold cyan]{_markup_text(backend, 64)} decompiler output[/bold cyan] "
+            f"[dim]({_markup_text(language, 32)}-like)[/dim]\n"
+        )
+        log.write(f"[yellow]{_markup_text(warning, 1_024)}[/yellow]\n")
         log.write(Text(_display_text(code, config.MAX_DECOMPILED_CHARS)))
 
     # ------------------------------------------------------------------

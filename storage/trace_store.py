@@ -13,7 +13,7 @@ import warnings
 
 import config
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS function_traces (
     disassembly       TEXT,
     decompiled_code   TEXT,
     decompile_language TEXT,
+    decompile_backend TEXT,
+    decompile_warning TEXT,
     calls_to          TEXT,    -- JSON array
     called_from       TEXT,    -- JSON array
     strings_referenced TEXT,   -- JSON array
@@ -151,7 +153,7 @@ class TraceStore:
             self.conn.execute('PRAGMA busy_timeout=15000')
             self._initialize_schema_with_retry()
             if db_path != ':memory:':
-                self.conn.execute('PRAGMA journal_mode=WAL')
+                self._enable_wal_with_retry()
                 self.conn.execute('PRAGMA synchronous=NORMAL')
                 for storage_path in (db_path, f'{db_path}-wal', f'{db_path}-shm'):
                     self._tighten_file_permissions(storage_path)
@@ -159,6 +161,19 @@ class TraceStore:
             self.conn.close()
             self._closed = True
             raise
+
+    def _enable_wal_with_retry(self, attempts: int = 10) -> None:
+        """Enable WAL despite concurrent connections finishing schema setup."""
+        delay = 0.05
+        for attempt in range(attempts):
+            try:
+                self.conn.execute('PRAGMA journal_mode=WAL')
+                return
+            except sqlite3.OperationalError as exc:
+                if 'locked' not in str(exc).lower() or attempt == attempts - 1:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 0.8)
 
     @staticmethod
     def _tighten_file_permissions(path: str):
@@ -249,6 +264,10 @@ class TraceStore:
             self.conn.execute('ALTER TABLE function_traces ADD COLUMN decompiled_code TEXT')
         if 'decompile_language' not in trace_columns:
             self.conn.execute('ALTER TABLE function_traces ADD COLUMN decompile_language TEXT')
+        if 'decompile_backend' not in trace_columns:
+            self.conn.execute('ALTER TABLE function_traces ADD COLUMN decompile_backend TEXT')
+        if 'decompile_warning' not in trace_columns:
+            self.conn.execute('ALTER TABLE function_traces ADD COLUMN decompile_warning TEXT')
         session_columns = {
             row['name'] for row in self.conn.execute('PRAGMA table_info(sessions)')
         }
@@ -400,15 +419,18 @@ class TraceStore:
             self.conn.execute("""
                 INSERT INTO function_traces
                     (session_id, address, name, disassembly, decompiled_code,
-                     decompile_language, calls_to, called_from,
+                     decompile_language, decompile_backend, decompile_warning,
+                     calls_to, called_from,
                      strings_referenced, instruction_count, snapshot_json,
                      ai_analysis_json, risk_level, mitre_technique, analysis_cache_key)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(session_id, address) DO UPDATE SET
                     name=excluded.name,
                     disassembly=excluded.disassembly,
                     decompiled_code=excluded.decompiled_code,
                     decompile_language=excluded.decompile_language,
+                    decompile_backend=excluded.decompile_backend,
+                    decompile_warning=excluded.decompile_warning,
                     calls_to=excluded.calls_to,
                     called_from=excluded.called_from,
                     strings_referenced=excluded.strings_referenced,
@@ -429,6 +451,8 @@ class TraceStore:
                     config.MAX_DECOMPILED_CHARS,
                 ),
                 self._bounded_text(getattr(function, 'decompile_language', ''), 32),
+                self._bounded_text(getattr(function, 'decompile_backend', ''), 64),
+                self._bounded_text(getattr(function, 'decompile_warning', ''), 1_024),
                 self._dump_json(function.calls_to),
                 self._dump_json(function.called_from),
                 self._dump_json(function.strings_referenced),

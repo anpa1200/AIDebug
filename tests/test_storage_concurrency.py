@@ -70,7 +70,10 @@ def test_concurrent_database_open_serializes_schema_setup(tmp_path, legacy):
             return (
                 version,
                 'analysis_cache_key' in columns,
-                {'decompiled_code', 'decompile_language'} <= columns,
+                {
+                    'decompiled_code', 'decompile_language',
+                    'decompile_backend', 'decompile_warning'
+                } <= columns,
                 {'file_format', 'analysis_origin', 'compiled_sha256'} <= session_columns,
                 runtime_table is not None,
             )
@@ -79,7 +82,7 @@ def test_concurrent_database_open_serializes_schema_setup(tmp_path, legacy):
         futures = [executor.submit(inspect_schema) for _ in range(worker_count)]
         results = [future.result(timeout=20) for future in futures]
 
-    assert results == [(5, True, True, True, True)] * worker_count
+    assert results == [(6, True, True, True, True)] * worker_count
 
 
 def save_event(store, event_kind, session_id, sequence):

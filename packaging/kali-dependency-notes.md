@@ -17,6 +17,9 @@ confirm package names but cannot validate a Kali build.
 - `debhelper-compat`
 - `bubblewrap` and `gcc` are suggested system packages for the optional `.c`
   to temporary-ELF source-analysis path; the generated artifact is never run.
+- `ghidra` is suggested for optional `--decompile` support. AIDebug invokes
+  `support/analyzeHeadless`, creates a temporary project, and does not provide a
+  heuristic fallback when the native-code decompiler is unavailable.
 
 The Debian control file uses versioned relationships so an incompatible target
 fails dependency resolution rather than producing a package with unsupported

@@ -64,8 +64,10 @@ def _function(address, name):
         ],
         strings_referenced=["[bold red]literal[/bold red]"],
     )
-    function.decompiled_code = "uintptr_t sample(void) { return rax; }"
-    function.decompile_language = "pseudo-c"
+    function.decompiled_code = "int sample(void) { return 0; }"
+    function.decompile_language = "c"
+    function.decompile_backend = "ghidra"
+    function.decompile_warning = "Not original source."
     return function
 
 
