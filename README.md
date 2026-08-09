@@ -15,9 +15,9 @@ reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning in the main full-screen GUI, ATT&CK candidates, YARA seeds,
 and analyst reports.
 
-> **Release status:** the source tree is the AIDebug v1.3.4 candidate. Until a
-> matching release is tagged and published, PyPI continues to serve historical
-> v1.1.0; install from this repository for the current feature set.
+> **Current release:** AIDebug v2.0.0. GitHub release artifacts and the PyPI
+> package are produced from the exact version-matched tag by the verified
+> publishing workflow.
 
 ## Project Maturity Evidence
 
