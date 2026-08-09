@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import struct
 from types import SimpleNamespace
 
 from textual.app import App
@@ -6,11 +8,14 @@ from textual.app import App
 from analysis import pe_structure
 from analysis.pe_structure import (
     PEDataDirectory,
+    PEDelayImportDescriptorRecord,
     PEExportRecord,
     PEHeader,
     PEHeaderField,
     PEImportDescriptorRecord,
     PEImportRecord,
+    PEResourceDataRecord,
+    PEResourceDirectoryRecord,
     PESectionRecord,
     PEStructure,
     PEStructureAnalyzer,
@@ -21,7 +26,13 @@ from analysis.pe_structure import (
     page_count,
     render_hex_page,
 )
-from ui.pe_tui import PEStructureScreen
+from ui.pe_tui import (
+    PEStructureScreen,
+    ResourcePayloadScreen,
+    export_resource,
+    resource_filename,
+    resource_payload,
+)
 
 
 class FakeStructure:
@@ -75,6 +86,38 @@ class FakeImportDescriptor:
         return 0x200
 
 
+class FakeDelayImportDescriptor:
+    @staticmethod
+    def get_file_offset():
+        return 0x240
+
+
+class FakeResourceDirectoryHeader:
+    Characteristics = 0
+    TimeDateStamp = 0x12345678
+    MajorVersion = 1
+    MinorVersion = 2
+
+    def __init__(self, offset, named_entries, id_entries):
+        self._offset = offset
+        self.NumberOfNamedEntries = named_entries
+        self.NumberOfIdEntries = id_entries
+
+    def get_file_offset(self):
+        return self._offset
+
+
+class FakeResourceDataEntry:
+    OffsetToData = 0x6000
+    Size = 25
+    CodePage = 65001
+    Reserved = 0
+
+    @staticmethod
+    def get_file_offset():
+        return 0x2E0
+
+
 class FakePE:
     closed = False
 
@@ -118,8 +161,35 @@ class FakePE:
             )
         ]
         self.DIRECTORY_ENTRY_DELAY_IMPORT = [
-            SimpleNamespace(dll=b"DELAY.dll", imports=[delayed])
+            SimpleNamespace(
+                dll=b"DELAY.dll",
+                imports=[delayed],
+                struct=FakeDelayImportDescriptor(),
+            )
         ]
+        language_entry = SimpleNamespace(
+            name=None,
+            id=1033,
+            data=SimpleNamespace(struct=FakeResourceDataEntry()),
+        )
+        language_directory = SimpleNamespace(
+            struct=FakeResourceDirectoryHeader(0x2C0, 0, 1),
+            entries=[language_entry],
+        )
+        name_entry = SimpleNamespace(
+            name=None,
+            id=1,
+            directory=language_directory,
+        )
+        name_directory = SimpleNamespace(
+            struct=FakeResourceDirectoryHeader(0x2A0, 0, 1),
+            entries=[name_entry],
+        )
+        type_entry = SimpleNamespace(name=None, id=24, directory=name_directory)
+        self.DIRECTORY_ENTRY_RESOURCE = SimpleNamespace(
+            struct=FakeResourceDirectoryHeader(0x280, 0, 1),
+            entries=[type_entry],
+        )
         exported = SimpleNamespace(
             name=b"Run", ordinal=1, address=0x1100, forwarder=b"OTHER.Target"
         )
@@ -129,12 +199,23 @@ class FakePE:
     def get_overlay_data_start_offset():
         return 0x800
 
+    @staticmethod
+    def get_offset_from_rva(rva):
+        if rva == 0x6000:
+            return 0x300
+        raise pe_structure.pefile.PEFormatError("unmapped test RVA")
+
     def close(self):
         self.closed = True
 
 
 def _model(raw_data=None):
-    raw_data = raw_data if raw_data is not None else bytes(range(256)) * 20
+    raw_data_buffer = bytearray(
+        raw_data if raw_data is not None else bytes(range(256)) * 20
+    )
+    resource_bytes = b"<assembly>safe</assembly>"
+    raw_data_buffer[0x300:0x300 + len(resource_bytes)] = resource_bytes
+    raw_data = bytes(raw_data_buffer)
     return PEStructure(
         filename="sample.exe",
         sha256="a" * 64,
@@ -237,13 +318,102 @@ def _model(raw_data=None):
                 True,
             ),
         ),
+        delay_import_descriptors=(
+            PEDelayImportDescriptorRecord(
+                0,
+                "DELAY.dll",
+                0x240,
+                1,
+                0x5100,
+                0x5200,
+                0x5300,
+                0x5400,
+                0x5500,
+                0x5600,
+                0x12345678,
+            ),
+            PEDelayImportDescriptorRecord(
+                1,
+                "<all-zero terminator>",
+                0x260,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                True,
+            ),
+        ),
+        resources=(
+            PEResourceDirectoryRecord(
+                ("<root>",),
+                0x280,
+                0,
+                0x12345678,
+                1,
+                2,
+                0,
+                1,
+            ),
+            PEResourceDirectoryRecord(
+                ("<root>", "RT_MANIFEST (24)"),
+                0x2A0,
+                0,
+                0x12345678,
+                1,
+                2,
+                0,
+                1,
+            ),
+            PEResourceDirectoryRecord(
+                ("<root>", "RT_MANIFEST (24)", "ID_1"),
+                0x2C0,
+                0,
+                0x12345678,
+                1,
+                2,
+                0,
+                1,
+            ),
+            PEResourceDataRecord(
+                ("<root>", "RT_MANIFEST (24)", "ID_1", "LANG_1033"),
+                0x2E0,
+                0x6000,
+                0x300,
+                25,
+                25,
+                65001,
+                0,
+                hashlib.sha256(resource_bytes).hexdigest(),
+                b"<assembly>safe</assembly>",
+            ),
+        ),
     )
 
 
 def test_pe_structure_uses_analyzed_bytes_and_recovers_all_tables(monkeypatch):
     fake_pe = FakePE()
     monkeypatch.setattr(pe_structure.pefile, "PE", lambda **kwargs: fake_pe)
-    raw_data = b"MZ" + bytes(4094)
+    raw_data_buffer = bytearray(b"MZ" + bytes(4094))
+    struct.pack_into(
+        "<8I",
+        raw_data_buffer,
+        0x240,
+        1,
+        0x5100,
+        0x5200,
+        0x5300,
+        0x5400,
+        0x5500,
+        0x5600,
+        0x12345678,
+    )
+    resource_bytes = b"<assembly>safe</assembly>"
+    raw_data_buffer[0x300:0x300 + len(resource_bytes)] = resource_bytes
+    raw_data = bytes(raw_data_buffer)
     info = SimpleNamespace(
         filename="[sample].exe",
         sha256="b" * 64,
@@ -297,6 +467,67 @@ def test_pe_structure_uses_analyzed_bytes_and_recovers_all_tables(monkeypatch):
             True,
         ),
     )
+    assert model.delay_import_descriptors == (
+        PEDelayImportDescriptorRecord(
+            0,
+            "DELAY.dll",
+            0x240,
+            1,
+            0x5100,
+            0x5200,
+            0x5300,
+            0x5400,
+            0x5500,
+            0x5600,
+            0x12345678,
+        ),
+        PEDelayImportDescriptorRecord(
+            1,
+            "<all-zero terminator>",
+            0x260,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+        ),
+    )
+    assert model.resources[:3] == (
+        PEResourceDirectoryRecord(
+            ("<root>",), 0x280, 0, 0x12345678, 1, 2, 0, 1
+        ),
+        PEResourceDirectoryRecord(
+            ("<root>", "RT_MANIFEST (24)"),
+            0x2A0,
+            0,
+            0x12345678,
+            1,
+            2,
+            0,
+            1,
+        ),
+        PEResourceDirectoryRecord(
+            ("<root>", "RT_MANIFEST (24)", "ID_1"),
+            0x2C0,
+            0,
+            0x12345678,
+            1,
+            2,
+            0,
+            1,
+        ),
+    )
+    resource = model.resources[3]
+    assert isinstance(resource, PEResourceDataRecord)
+    assert resource.path[-1] == "LANG_1033"
+    assert resource.data_file_offset == 0x300
+    assert resource.complete
+    assert resource.sha256 == hashlib.sha256(resource_bytes).hexdigest()
+    assert resource.preview == resource_bytes
     assert [(item.kind, item.name) for item in model.imports] == [
         ("import", "CreateFileW"),
         ("delay", "ordinal_7"),
@@ -390,6 +621,63 @@ def test_pe_structure_rejects_non_pe_input():
         raise AssertionError("non-PE input was accepted")
 
 
+def test_resource_data_record_marks_incomplete_file_ranges():
+    data = SimpleNamespace(
+        OffsetToData=0x7000,
+        Size=10,
+        CodePage=0,
+        Reserved=0,
+        get_file_offset=lambda: 0x220,
+    )
+    pe = SimpleNamespace(get_offset_from_rva=lambda _rva: 6)
+
+    record = PEStructureAnalyzer._resource_data_record(
+        pe,
+        b"01234567",
+        ("<root>", "RT_RCDATA (10)", "ID_1", "LANG_1033"),
+        data,
+    )
+
+    assert not record.complete
+    assert record.available_size == 2
+    assert record.preview == b"67"
+    assert record.sha256 is None
+
+
+def test_resource_payload_filename_and_secure_export(tmp_path):
+    model = _model()
+    record = next(
+        item for item in model.resources if isinstance(item, PEResourceDataRecord)
+    )
+
+    assert resource_payload(model, record) == model.raw_data[0x300:0x319]
+    filename = resource_filename(record)
+    assert filename.endswith(".xml")
+    assert "/" not in filename and "\\" not in filename
+
+    destination = export_resource(model, record, tmp_path / "exports")
+
+    assert destination.read_bytes() == model.raw_data[0x300:0x319]
+    assert destination.stat().st_mode & 0o777 == 0o600
+    try:
+        export_resource(model, record, tmp_path / "exports")
+    except FileExistsError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("resource export overwrote an existing file")
+
+    real_directory = tmp_path / "real-directory"
+    real_directory.mkdir()
+    symlinked_root = tmp_path / "symlinked-root"
+    symlinked_root.symlink_to(real_directory, target_is_directory=True)
+    try:
+        export_resource(model, record, symlinked_root)
+    except OSError as exc:
+        assert "safe directory" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("resource export followed a symlinked output root")
+
+
 def test_hex_pages_keep_first_middle_and_final_bytes_reachable():
     data = bytes(range(256)) * 33 + b"FINAL"
     assert page_count(len(data), 4096) == 3
@@ -453,6 +741,53 @@ def test_pe_structure_screen_pages_whole_file():
             assert "IMAGE_SCN_MEM_EXECUTE" in sections
             assert "IMAGE_SCN_MEM_READ" in sections
             assert "Memory permissions            R-X" in sections
+            tabs.active = "pe-directories"
+            await pilot.pause()
+            directories = "\n".join(
+                line.text for line in screen.query_one("#pe-directories-log").lines
+            )
+            assert "Optional-header data directories" in directories
+            assert "Resource explorer" in directories
+            assert "type → name/ID → language → data file" in directories
+            tree = screen.query_one("#pe-resource-tree")
+            data_node = screen._resource_nodes[
+                (
+                    "<root>",
+                    "RT_MANIFEST (24)",
+                    "ID_1",
+                    "LANG_1033",
+                    "<data>",
+                )
+            ]
+            tree.move_cursor(data_node)
+            tree.focus()
+            await pilot.pause()
+            directories = "\n".join(
+                line.text for line in screen.query_one("#pe-directories-log").lines
+            )
+            assert "RT_MANIFEST (24)" in directories
+            assert "ID_1" in directories
+            assert "LANG_1033" in directories
+            assert "Data-entry file offset" in directories
+            assert "OffsetToData (RVA)" in directories
+            assert "CodePage                 65001" in directories
+            assert "SHA-256" in directories
+            assert "Preview (hex)" in directories
+            assert "Preview (ASCII)" in directories
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, ResourcePayloadScreen)
+            payload_view = "\n".join(
+                line.text
+                for line in app.screen.query_one("#resource-payload-log").lines
+            )
+            assert "Resource payload" in payload_view
+            assert "UTF-8 text preview" in payload_view
+            assert "<assembly>safe</assembly>" in payload_view
+            await pilot.press("escape")
+            await pilot.pause()
+            screen = app.screen
+            tabs = screen.query_one("#pe-tabs")
             tabs.active = "pe-import-descriptors"
             await pilot.pause()
             descriptors = "\n".join(
@@ -466,6 +801,15 @@ def test_pe_structure_screen_pages_whole_file():
             assert "Name" in descriptors
             assert "FirstThunk (IAT)" in descriptors
             assert "All-zero terminator" in descriptors
+            assert "IMAGE_DELAYLOAD_DESCRIPTOR records" in descriptors
+            assert "Attributes / grAttrs" in descriptors
+            assert "DllName / szName" in descriptors
+            assert "ModuleHandle / phmod" in descriptors
+            assert "ImportAddressTable / pIAT" in descriptors
+            assert "ImportNameTable / pINT" in descriptors
+            assert "BoundImportAddress / pBoundIAT" in descriptors
+            assert "UnloadInformation / pUnloadIAT" in descriptors
+            assert "TimeDateStamp / dwTimeStamp" in descriptors
             assert {pane.id for pane in screen.query("TabbedContent TabPane")} == {
                 "pe-overview",
                 "pe-hex",

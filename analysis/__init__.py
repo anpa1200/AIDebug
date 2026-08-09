@@ -11,11 +11,14 @@ from .flirt import FlirtMatch, FlirtMatcher
 from .pattern_detector import MalwarePattern, PatternDetector
 from .pe_structure import (
     PEDataDirectory,
+    PEDelayImportDescriptorRecord,
     PEExportRecord,
     PEHeader,
     PEHeaderField,
     PEImportDescriptorRecord,
     PEImportRecord,
+    PEResourceDataRecord,
+    PEResourceDirectoryRecord,
     PESectionRecord,
     PEStructure,
     PEStructureAnalyzer,
@@ -34,6 +37,8 @@ __all__ = [
     'PatternDetector', 'MalwarePattern', 'FlirtMatcher', 'FlirtMatch',
     'PEStructureAnalyzer', 'PEStructure', 'PEHeader', 'PEHeaderField',
     'PEDataDirectory', 'PESectionRecord', 'PEImportDescriptorRecord',
+    'PEDelayImportDescriptorRecord',
+    'PEResourceDirectoryRecord', 'PEResourceDataRecord',
     'PEImportRecord', 'PEExportRecord',
     'render_hex_page',
 ]

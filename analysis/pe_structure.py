@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import struct
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -272,6 +274,59 @@ class PEImportDescriptorRecord:
 
 
 @dataclass(frozen=True)
+class PEDelayImportDescriptorRecord:
+    index: int
+    dll: str
+    file_offset: int
+    attributes: int
+    dll_name: int
+    module_handle: int
+    import_address_table: int
+    import_name_table: int
+    bound_import_address_table: int
+    unload_information_table: int
+    time_date_stamp: int
+    is_zero_terminator: bool = False
+
+    @property
+    def uses_rvas(self) -> bool:
+        return bool(self.attributes & 1)
+
+
+@dataclass(frozen=True)
+class PEResourceDirectoryRecord:
+    path: tuple[str, ...]
+    file_offset: int
+    characteristics: int
+    time_date_stamp: int
+    major_version: int
+    minor_version: int
+    named_entries: int
+    id_entries: int
+
+
+@dataclass(frozen=True)
+class PEResourceDataRecord:
+    path: tuple[str, ...]
+    entry_file_offset: int
+    data_rva: int
+    data_file_offset: int | None
+    size: int
+    available_size: int
+    code_page: int
+    reserved: int
+    sha256: str | None
+    preview: bytes
+
+    @property
+    def complete(self) -> bool:
+        return self.data_file_offset is not None and self.available_size == self.size
+
+
+PEResourceRecord = PEResourceDirectoryRecord | PEResourceDataRecord
+
+
+@dataclass(frozen=True)
 class PEExportRecord:
     name: str
     ordinal: int
@@ -298,8 +353,12 @@ class PEStructure:
     overlay_size: int
     raw_data: bytes = field(repr=False)
     import_descriptors: tuple[PEImportDescriptorRecord, ...] = ()
+    delay_import_descriptors: tuple[PEDelayImportDescriptorRecord, ...] = ()
+    resources: tuple[PEResourceRecord, ...] = ()
     imports_truncated: bool = False
     import_descriptors_truncated: bool = False
+    delay_import_descriptors_truncated: bool = False
+    resources_truncated: bool = False
     exports_truncated: bool = False
 
 
@@ -355,6 +414,10 @@ class PEStructureAnalyzer:
             import_descriptors, import_descriptors_truncated = (
                 self._import_descriptors(pe, raw_data)
             )
+            delay_descriptors, delay_descriptors_truncated = (
+                self._delay_import_descriptors(pe, raw_data)
+            )
+            resources, resources_truncated = self._resources(pe, raw_data)
             imports, imports_truncated = self._imports(pe)
             exports, exports_truncated = self._exports(pe)
 
@@ -385,8 +448,12 @@ class PEStructureAnalyzer:
                 overlay_size=overlay_size,
                 raw_data=raw_data,
                 import_descriptors=import_descriptors,
+                delay_import_descriptors=delay_descriptors,
+                resources=resources,
                 imports_truncated=imports_truncated,
                 import_descriptors_truncated=import_descriptors_truncated,
+                delay_import_descriptors_truncated=delay_descriptors_truncated,
+                resources_truncated=resources_truncated,
                 exports_truncated=exports_truncated,
             )
         finally:
@@ -542,6 +609,196 @@ class PEStructureAnalyzer:
             return int(pe.get_offset_from_rva(int(directories[1].VirtualAddress)))
         except (AttributeError, TypeError, ValueError, pefile.PEFormatError):
             return None
+
+    def _delay_import_descriptors(
+        self,
+        pe,
+        raw_data: bytes,
+    ) -> tuple[tuple[PEDelayImportDescriptorRecord, ...], bool]:
+        entries = list(getattr(pe, "DIRECTORY_ENTRY_DELAY_IMPORT", ()))
+        truncated = len(entries) > config.MAX_DELAY_IMPORT_DESCRIPTORS
+        selected = entries[:config.MAX_DELAY_IMPORT_DESCRIPTORS]
+        records = []
+        for index, entry in enumerate(selected):
+            descriptor = getattr(entry, "struct", None)
+            if descriptor is None:
+                continue
+            file_offset = int(descriptor.get_file_offset())
+            if file_offset < 0 or file_offset > len(raw_data) - 32:
+                truncated = True
+                continue
+            values = struct.unpack_from("<8I", raw_data, file_offset)
+            records.append(
+                PEDelayImportDescriptorRecord(
+                    index=index,
+                    dll=self._decode(getattr(entry, "dll", None))
+                    or "<unknown DLL>",
+                    file_offset=file_offset,
+                    attributes=values[0],
+                    dll_name=values[1],
+                    module_handle=values[2],
+                    import_address_table=values[3],
+                    import_name_table=values[4],
+                    bound_import_address_table=values[5],
+                    unload_information_table=values[6],
+                    time_date_stamp=values[7],
+                )
+            )
+
+        if not truncated:
+            terminator_offset = self._delay_import_terminator_offset(pe, records)
+            if (
+                terminator_offset is not None
+                and 0 <= terminator_offset <= len(raw_data) - 32
+                and raw_data[terminator_offset:terminator_offset + 32] == bytes(32)
+            ):
+                records.append(
+                    PEDelayImportDescriptorRecord(
+                        index=len(records),
+                        dll="<all-zero terminator>",
+                        file_offset=terminator_offset,
+                        attributes=0,
+                        dll_name=0,
+                        module_handle=0,
+                        import_address_table=0,
+                        import_name_table=0,
+                        bound_import_address_table=0,
+                        unload_information_table=0,
+                        time_date_stamp=0,
+                        is_zero_terminator=True,
+                    )
+                )
+        return tuple(records), truncated
+
+    @staticmethod
+    def _delay_import_terminator_offset(
+        pe,
+        records: list[PEDelayImportDescriptorRecord],
+    ) -> int | None:
+        if records:
+            return records[-1].file_offset + 32
+        directories = getattr(pe.OPTIONAL_HEADER, "DATA_DIRECTORY", ())
+        if len(directories) <= 13 or int(directories[13].VirtualAddress) == 0:
+            return None
+        try:
+            return int(pe.get_offset_from_rva(int(directories[13].VirtualAddress)))
+        except (AttributeError, TypeError, ValueError, pefile.PEFormatError):
+            return None
+
+    def _resources(
+        self,
+        pe,
+        raw_data: bytes,
+    ) -> tuple[tuple[PEResourceRecord, ...], bool]:
+        root = getattr(pe, "DIRECTORY_ENTRY_RESOURCE", None)
+        if root is None:
+            return (), False
+
+        records: list[PEResourceRecord] = []
+        truncated = False
+        seen_directories: set[int] = set()
+
+        def append(record: PEResourceRecord) -> bool:
+            nonlocal truncated
+            if len(records) >= config.MAX_RESOURCE_RECORDS:
+                truncated = True
+                return False
+            records.append(record)
+            return True
+
+        def walk(directory, path: tuple[str, ...], depth: int) -> None:
+            nonlocal truncated
+            if depth > config.MAX_RESOURCE_DEPTH:
+                truncated = True
+                return
+            identity = id(directory)
+            if identity in seen_directories:
+                truncated = True
+                return
+            seen_directories.add(identity)
+            header = getattr(directory, "struct", None)
+            if header is None:
+                truncated = True
+                return
+            if not append(
+                PEResourceDirectoryRecord(
+                    path=path,
+                    file_offset=int(header.get_file_offset()),
+                    characteristics=int(getattr(header, "Characteristics", 0)),
+                    time_date_stamp=int(getattr(header, "TimeDateStamp", 0)),
+                    major_version=int(getattr(header, "MajorVersion", 0)),
+                    minor_version=int(getattr(header, "MinorVersion", 0)),
+                    named_entries=int(getattr(header, "NumberOfNamedEntries", 0)),
+                    id_entries=int(getattr(header, "NumberOfIdEntries", 0)),
+                )
+            ):
+                return
+            for entry in getattr(directory, "entries", ()):
+                child_path = path + (self._resource_entry_label(entry, depth),)
+                child_directory = getattr(entry, "directory", None)
+                if child_directory is not None:
+                    walk(child_directory, child_path, depth + 1)
+                    if truncated and len(records) >= config.MAX_RESOURCE_RECORDS:
+                        return
+                    continue
+                data = getattr(getattr(entry, "data", None), "struct", None)
+                if data is not None and not append(
+                    self._resource_data_record(pe, raw_data, child_path, data)
+                ):
+                    return
+
+        walk(root, ("<root>",), 0)
+        return tuple(records), truncated
+
+    @staticmethod
+    def _resource_entry_label(entry, depth: int) -> str:
+        name = getattr(entry, "name", None)
+        if name is not None:
+            return str(name)
+        resource_id = int(getattr(entry, "id", 0))
+        if depth == 0:
+            return f"{pefile.RESOURCE_TYPE.get(resource_id, 'TYPE')} ({resource_id})"
+        if depth == 2:
+            return f"LANG_{resource_id}"
+        return f"ID_{resource_id}"
+
+    @staticmethod
+    def _resource_data_record(
+        pe,
+        raw_data: bytes,
+        path: tuple[str, ...],
+        data,
+    ) -> PEResourceDataRecord:
+        data_rva = int(getattr(data, "OffsetToData", 0))
+        size = max(0, int(getattr(data, "Size", 0)))
+        try:
+            data_file_offset = int(pe.get_offset_from_rva(data_rva))
+        except (AttributeError, TypeError, ValueError, pefile.PEFormatError):
+            data_file_offset = None
+
+        available_size = 0
+        preview = b""
+        digest = None
+        if data_file_offset is not None and 0 <= data_file_offset <= len(raw_data):
+            available_size = min(size, len(raw_data) - data_file_offset)
+            view = memoryview(raw_data)[
+                data_file_offset:data_file_offset + available_size
+            ]
+            preview = bytes(view[:config.MAX_RESOURCE_PREVIEW_BYTES])
+            if available_size == size:
+                digest = hashlib.sha256(view).hexdigest()
+        return PEResourceDataRecord(
+            path=path,
+            entry_file_offset=int(data.get_file_offset()),
+            data_rva=data_rva,
+            data_file_offset=data_file_offset,
+            size=size,
+            available_size=available_size,
+            code_page=int(getattr(data, "CodePage", 0)),
+            reserved=int(getattr(data, "Reserved", 0)),
+            sha256=digest,
+            preview=preview,
+        )
 
     def _imports(self, pe) -> tuple[tuple[PEImportRecord, ...], bool]:
         records = []

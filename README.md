@@ -117,13 +117,30 @@ set flag is decoded by name, including executable, DLL, system, relocation,
 ASLR, high-entropy VA, DEP/NX, CFG, integrity checks, AppContainer, and SEH.
 The Sections tab exposes every field in each 40-byte `IMAGE_SECTION_HEADER`,
 including relocation and line-number pointers/counts, and decodes content,
-linker, alignment, and memory-permission flags. The Import descriptors tab
+linker, alignment, and memory-permission flags. The Resources workspace keeps
+the optional-header directory table and expands the resource directory as a
+navigable, bounded type → name/ID → language → data-file explorer. It displays
+every parsed `IMAGE_RESOURCE_DIRECTORY` header and
+`IMAGE_RESOURCE_DATA_ENTRY`, including
+file offsets, RVA, declared and available sizes, code page, reserved value,
+SHA-256 of complete payloads, safe byte previews, and explicit malformed-range
+or traversal-limit warnings. Known numeric resource types are labelled by name.
+Select a resource file and press `Enter` to open its complete bytes in AIDebug's
+read-only, paged hex/text viewer; the payload is never launched. Press `D` to
+download/export it with owner-only permissions under
+`./aidebug-resource-exports/<sample-hash>/`. Existing files and symlinked output
+directories are refused rather than overwritten or followed.
+
+The Import descriptors tab
 shows every standard 20-byte `IMAGE_IMPORT_DESCRIPTOR`, including INT and IAT
 RVAs, timestamp, forwarder chain, DLL-name RVA, file offset, and confirmed
-all-zero terminator evidence. Imports include normal and delay-loaded function
-entries; exports include ordinals and forwarders. Overlay offset and size are
-reported when extra data follows the mapped image. `P` remains an additional
-shortcut for analysts accustomed to opening PE Structure directly.
+all-zero terminator evidence. The same paged workspace shows complete 32-byte
+`IMAGE_DELAYLOAD_DESCRIPTOR` records, distinguishes RVA-based and legacy
+VA-based forms, preserves reserved attribute bits, and confirms the all-zero
+terminator. Imports include normal and delay-loaded function entries; exports
+include ordinals and forwarders. Overlay offset and size are reported when
+extra data follows the mapped image. `P` remains an additional shortcut for
+analysts accustomed to opening PE Structure directly.
 
 The Hex tab covers every byte of the exact file content AIDebug hashed. It uses
 4 KiB pages instead of creating one unbounded terminal document: use
