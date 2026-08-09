@@ -1,2 +1,2 @@
-anthropic>=0.40
+anthropic>=0.120.2
 yara-python>=4.5.4
