@@ -1,9 +1,11 @@
 # Release Process
 
 This checklist keeps AIDebug releases reviewer-friendly and package-ready.
-Historical release artifacts are immutable. The source tree is prepared as
-v2.0.0; its package is not public until an exact `v2.0.0` tag and GitHub
-release complete the verified publishing workflow.
+Historical release artifacts are immutable. The current public release is
+[v2.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0), and its
+[PyPI package](https://pypi.org/project/1200km-aidebug/2.0.0/) was built and
+smoke-tested from that exact version-matched tag by the verified publishing
+workflow.
 
 ## Pre-Release
 

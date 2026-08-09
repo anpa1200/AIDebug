@@ -15,9 +15,10 @@ reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning in the main full-screen GUI, ATT&CK candidates, YARA seeds,
 and analyst reports.
 
-> **Current release:** AIDebug v2.0.0. GitHub release artifacts and the PyPI
-> package are produced from the exact version-matched tag by the verified
-> publishing workflow.
+> **Current release:** [AIDebug v2.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0).
+> Its [PyPI distributions](https://pypi.org/project/1200km-aidebug/2.0.0/)
+> were built from the immutable version-matched tag by the verified publishing
+> workflow.
 
 ## Project Maturity Evidence
 
