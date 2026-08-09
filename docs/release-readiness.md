@@ -49,8 +49,9 @@ once, and passes that same artifact to PyPI Trusted Publishing.
 The repository screenshots and mock reports are illustrative examples. They are
 not automated acceptance evidence and must not be used to claim detection
 accuracy. Tests and workflow logs are the repeatable evidence for a specific
-commit. PyPI provenance is the evidence that a published file came from a
-specific release workflow, tag, and source commit.
+commit. PyPI provenance proves that a published file came through the trusted
+GitHub workflow and protected PyPI environment; the immutable tag and workflow
+log establish which source tree that workflow checked out and built.
 
 ## Manual Release Controls
 
@@ -69,13 +70,16 @@ An owner must verify all of the following outside the source tree:
 
 ## Current Status
 
-The source tree and release metadata identify v2.0.0. A public package is valid
-only when it is produced from the exact version-matched tag by the release
-workflow. The Debian/Kali proposal supports only the tested
-offline base until optional AI/Frida dependency decisions are made, and it has
-not been accepted or validated on current Kali builders. The checked Ubuntu
-Noble repository is below several declared dependency floors and is not Kali
-validation. The generic top-level Python package layout also remains
-compatibility debt for a future namespace migration. The public Medium article
-and open Kali request still contain older, broader capability/dependency claims;
-update those external pages before using them to promote the next release.
+[v2.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0) is public on
+[PyPI](https://pypi.org/project/1200km-aidebug/2.0.0/). The release workflow
+verified the immutable tag, repeated the source and distribution checks, and
+smoke-tested the published wheel; a separate fresh-environment install also
+reported `AIDebug 2.0.0` with no broken requirements. The Debian/Kali proposal
+supports only the tested offline base until optional AI/Frida dependency
+decisions are made, and it has not been accepted or validated on current Kali
+builders. The checked Ubuntu Noble repository is below several declared
+dependency floors and is not Kali validation. The generic top-level Python
+package layout also remains compatibility debt for a future namespace
+migration. The public Medium article and open Kali request still contain older,
+broader capability/dependency claims; update those external pages before using
+them to promote the next release.
