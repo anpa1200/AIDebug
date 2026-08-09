@@ -133,7 +133,7 @@ The target executes, so use a disposable, network-controlled VM.
 
 ## 5. Learning Mode
 
-Open the 53 bundled real-function lessons in AIDebug's original full-screen
+Open the 100 bundled real-function lessons in AIDebug's original full-screen
 GUI. A search topic filters the left catalog without compiling an artifact:
 
 ```bash
@@ -161,6 +161,20 @@ database. Exact lessons require an x86-64 ELF compiler and Ghidra. Output
 includes the exact source-file path and contents, compiler and artifact
 provenance, real instruction bytes, and Ghidra's explicit non-original-source
 warning; it never substitutes handwritten pseudo-code.
+
+Load a separate analyst-maintained collection without copying it into the
+package:
+
+```bash
+aidebug --learn --learning-collection /path/to/cases
+aidebug --learn parse-header --learning-collection /path/to/cases
+```
+
+The collection directory requires `case_common.h` and matching `*.c` files;
+`collection.json` is optional but recommended for stable ordering and metadata.
+The repository's `learning/cases/collection.json` is the 100-case reference.
+External source is path-contained and size-validated, but it is still parsed by
+the local compiler and should be reviewed before use.
 
 ## 6. Export And Handoff
 

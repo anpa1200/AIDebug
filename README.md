@@ -66,11 +66,12 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | YARA candidate rules | Detection-engineering seed that must be compiled and tested |
 | Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
 | CFG visualization | Function-level behavior review |
+| Hex / PE workspace | Read-only whole-file hex for every loaded binary; PE files additionally show DOS/NT/optional headers, sections, directories, imports, exports, forwarders, and overlays |
 | Ghidra C-like decompilation | Native-code reconstruction for function triage; not recovered original source |
 | Full reconstruction file | One provenance-marked C-like file for every discovered function |
 | LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
 | Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
-| Live Learning Mode | Main-GUI exploration of 53 standalone C cases with real compiler output, AIDebug disassembly, and Ghidra reconstruction |
+| Live Learning Mode | Main-GUI exploration of 100 standalone C cases or a validated external collection, with real compiler output, AIDebug disassembly, and Ghidra reconstruction |
 | Hash-indexed analysis history | Local recovery of prior sessions and compatible AI findings when the same SHA-256 is opened again |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
@@ -94,6 +95,31 @@ ELF binaries use the same static-analysis command as PE files:
 ```bash
 aidebug --binary /path/to/sample.elf --offline --no-tui
 ```
+
+### Hex viewer and PE Structure workspace
+
+Open a supported binary in the main GUI, then press `X`:
+
+```bash
+aidebug --binary /path/to/sample.exe --offline
+aidebug --binary /path/to/sample.elf --offline
+```
+
+Every loaded binary receives a whole-file Hex view plus file metadata. When the
+file is PE32 or PE32+, AIDebug automatically opens the richer PE workspace with
+Overview, Hex, Headers, Sections, Directories, Imports, and Exports tabs. The
+header view includes the DOS header, NT signature, COFF file header, and
+optional header. Imports include normal and delay-loaded entries; exports
+include ordinals and forwarders. Overlay offset and size are reported when
+extra data follows the mapped image. `P` remains an additional shortcut for
+analysts accustomed to opening PE Structure directly.
+
+The Hex tab covers every byte of the exact file content AIDebug hashed. It uses
+4 KiB pages instead of creating one unbounded terminal document: use
+`PageUp`/`PageDown` to move, and `Home`/`End` to jump to the first or last page.
+Imports and exports are likewise paged for responsive navigation. Press
+`Escape` to return to function analysis. This workspace is offline and
+read-only: it does not execute the PE or reopen its source path.
 
 Add bounded Ghidra decompiler output to the CLI, TUI, HTML, and JSON with
 `--decompile`. Install Ghidra first, or provide its headless launcher explicitly:
@@ -160,7 +186,7 @@ content to an AI provider, and never executes the compiled lesson artifact.
 
 #### Launch the GUI
 
-Open the complete 53-case catalog:
+Open the complete 100-case catalog:
 
 ```bash
 aidebug --learn
@@ -191,7 +217,7 @@ A broader search opens only matching cases.
 
 | GUI area | Evidence shown |
 |---|---|
-| Learning Cases | Search result or all 53 standalone cases, with ID, category, and lesson title |
+| Learning Cases | Search result or all 100 standalone cases, with ID, category, and lesson title |
 | Real Disassembly | Actual function address, instruction bytes, and compiler-generated assembly |
 | Original C Source | Exact contents and repository path of the selected lesson file |
 | Pseudo-code tab | Ghidra's independent C-like reconstruction from the generated ELF |
@@ -212,6 +238,30 @@ A broader search opens only matching cases.
 Analyzed results are cached only for the current GUI session. Returning to a
 case reloads its cached result; press `R` when you want fresh compiler and
 Ghidra output.
+
+#### External collections
+
+Open a directory of standalone external C lessons in the same GUI:
+
+```bash
+aidebug --learn --learning-collection /path/to/my-cases
+aidebug --learn external-add --learning-collection /path/to/my-cases
+```
+
+The directory must contain `case_common.h` and one or more `.c` files. Each
+file ID such as `external-add.c` must define a matching public function such as
+`learn_external_add(...)`. An optional `collection.json` controls ordering and
+lesson metadata; [`learning/cases/`](learning/cases/) is a complete 100-case
+reference collection that can also be loaded externally:
+
+```bash
+aidebug --learn --learning-collection ./learning/cases
+```
+
+AIDebug rejects absolute or escaping manifest paths, duplicate/invalid IDs,
+oversized files, non-UTF-8 input, and missing expected symbols. The generated
+ELF is never executed, but the local compiler still parses the supplied source;
+review external collections before loading them.
 
 #### Evidence pipeline and safety
 
@@ -365,7 +415,7 @@ material:
   loop for documentation.
 - [`examples/toy_c_analysis.c`](examples/toy_c_analysis.c) - a benign C fixture
   for sandboxed temporary-ELF analysis.
-- [`learning/cases/`](learning/cases/) - 53 benign, standalone C functions used
+- [`learning/cases/`](learning/cases/) - 100 benign, standalone C functions used
   by the real Learning Mode compile/disassemble/decompile pipeline.
 - [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
   - hand-authored schema-v2 offline session example with an all-zero mock hash.
@@ -382,6 +432,8 @@ tests, and integration demos. They are not execution or accuracy evidence.
 ```mermaid
 flowchart LR
   Sample[PE/ELF sample] --> Parse[PE/ELF parsing]
+  Parse --> HexView[Read-only whole-file hex]
+  Parse --> PEView[Automatic full PE structure presentation]
   Source[C source] --> Compile[Sandboxed temporary ELF compilation]
   Compile --> Parse
   Lesson[Selected learning/cases/*.c] --> LearnCompile[Temporary non-executed x86-64 ELF]
@@ -413,10 +465,11 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 |---|---|
 | Malware patterns | XOR loops, stack strings, API hashing, RDTSC timing, direct syscalls, NOP sleds, null-safe XOR, Base64 tables |
 | Formats | PE32, PE64, ELF, and one-file C source compiled to a temporary ELF |
+| File inspection | Main-GUI whole-file hex for loaded binaries; PE files add DOS/NT/optional headers, sections, data directories, imports/delay imports, exports/forwarders, and overlays |
 | Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
 | Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
 | Active debug | Local ELF execution through GDB/MI with analyst-controlled breakpoints and instruction stepping |
-| Learning | 53 individually compiled x86-64 source cases in the main GUI, with exact C, real assembly, build evidence, and Ghidra output |
+| Learning | 100 bundled or externally loaded x86-64 source cases in the main GUI, with exact C, real assembly, build evidence, and Ghidra output |
 | Reports | HTML, versioned AIDebug JSON, and YARA candidates |
 
 ## Safety

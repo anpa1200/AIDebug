@@ -1,9 +1,13 @@
 import asyncio
 from types import SimpleNamespace
 
+from textual.screen import Screen
+
+import ui.tui as tui_module
 from analysis.ai_analyzer import AIAnalysis
 from analysis.disassembler import Function, Instruction
-from learning import AnalyzedLesson, catalog
+from learning import AnalyzedLesson, Lesson, catalog
+from ui.hex_tui import HexViewerScreen
 from ui.learning_tui import LearningModeApp
 from ui.tui import AIDebugApp, AnalysisReady
 
@@ -138,6 +142,7 @@ def _app(analyzer, *, allow_bulk=True, max_bulk=1, cached=False, history=False):
         sha256="a" * 64,
         os_target="linux",
         imports=[],
+        raw_data=b"\x7fELF" + bytes(5000),
     )
     cached_results = {
         function.address: _analysis(function.address, function.name)
@@ -228,6 +233,46 @@ def test_tui_blocks_unacknowledged_remote_bulk_action():
     asyncio.run(scenario())
 
 
+def test_tui_file_inspector_opens_hex_viewer_for_elf():
+    async def scenario():
+        app = _app(FakeAnalyzer())
+        async with app.run_test() as pilot:
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, HexViewerScreen)
+            rendered = "\n".join(
+                line.text for line in app.screen.query_one("#hex-file-log").lines
+            )
+            assert "Whole-file hexadecimal view" in rendered
+            assert "7f 45 4c 46" in rendered
+
+    asyncio.run(scenario())
+
+
+def test_tui_file_inspector_routes_pe_to_full_structure(monkeypatch):
+    class FakePEAnalyzer:
+        def analyze(self, binary_info):
+            return object()
+
+    class FakePEScreen(Screen):
+        def __init__(self, structure):
+            super().__init__()
+            self.structure = structure
+
+    monkeypatch.setattr(tui_module, "PEStructureAnalyzer", FakePEAnalyzer)
+    monkeypatch.setattr(tui_module, "PEStructureScreen", FakePEScreen)
+
+    async def scenario():
+        app = _app(FakeAnalyzer())
+        app.binary_info.file_format = "PE"
+        async with app.run_test() as pilot:
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, FakePEScreen)
+
+    asyncio.run(scenario())
+
+
 class FakeLearningAnalyzer:
     compiler = "/usr/bin/fake-gcc"
 
@@ -292,5 +337,32 @@ def test_learning_mode_uses_original_tui_layout_and_live_result_panes():
             await pilot.pause(0.2)
             assert app._current_lesson_id == lessons[1].lesson_id
             assert set(app._results) == {lesson.lesson_id for lesson in lessons}
+
+    asyncio.run(scenario())
+
+
+def test_learning_mode_uses_external_lesson_lookup_instead_of_builtin_catalog():
+    async def scenario():
+        lesson = Lesson(
+            lesson_id="external-add",
+            title="External addition",
+            category="analyst collection",
+            function_name="learn_external_add",
+            explanation="Adds a constant.",
+            effects="The result register changes.",
+            analyst_clue="Compare source and assembly.",
+            pitfall="Instruction selection can vary.",
+        )
+        app = LearningModeApp(
+            (lesson,),
+            initial_lesson_id=lesson.lesson_id,
+            live_analyzer=FakeLearningAnalyzer(),
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert app._current_lesson_id == "external-add"
+            assert "external-add" in app._results
+            assert app.query_one("#func-table").row_count == 1
 
     asyncio.run(scenario())

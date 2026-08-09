@@ -3,7 +3,8 @@ aidebug (1.3.4-0kali1) kali-dev; urgency=medium
   * Restore compatible prior AI findings by exact sample SHA-256.
   * Add local history lookup and the main-GUI History tab.
   * Record analysis mode, analyzer, status, and completion time per session.
-  * Expand the real Learning Mode corpus from 47 to 53 source cases.
+  * Expand the real Learning Mode corpus to 100 source cases.
+  * Load validated external case collections in the original GUI.
 
  -- Andrey Pautov <1200km@gmail.com>  Sun, 09 Aug 2026 12:00:00 +0300
 

@@ -23,7 +23,12 @@ from textual.widgets import (
 )
 
 import config
-from learning import AnalyzedLesson, Lesson, LiveLearningAnalyzer, get_lesson
+from learning import (
+    AnalyzedLesson,
+    LearningCollection,
+    Lesson,
+    LiveLearningAnalyzer,
+)
 
 from .tui import AIDebugApp, _display_text, _markup_text
 
@@ -65,13 +70,17 @@ class LearningModeApp(App):
         compiler: str | None = None,
         ghidra_headless: str | None = None,
         live_analyzer: LiveLearningAnalyzer | None = None,
+        collection: LearningCollection | None = None,
     ) -> None:
         super().__init__()
         self.lessons = lessons
+        self._lesson_by_id = {lesson.lesson_id: lesson for lesson in lessons}
+        self.collection = collection
         self.initial_lesson_id = initial_lesson_id
         self.live_analyzer = live_analyzer or LiveLearningAnalyzer(
             compiler=compiler,
             ghidra_headless=ghidra_headless,
+            collection=collection,
         )
         self._results: dict[str, AnalyzedLesson] = {}
         self._analyzing: set[str] = set()
@@ -80,10 +89,15 @@ class LearningModeApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         compiler = _display_text(self.live_analyzer.compiler, 180)
+        collection = _display_text(
+            self.collection.name if self.collection is not None else "bundled",
+            120,
+        )
         yield Static(
             Text(
                 f" LEARNING MODE  |  {len(self.lessons)} real C cases  "
-                f"|  x86-64 ELF  |  compiler: {compiler}  "
+                f"|  collection: {collection}  |  x86-64 ELF  "
+                f"|  compiler: {compiler}  "
                 "|  compiled artifacts are never executed"
             ),
             id="toolbar",
@@ -127,7 +141,7 @@ class LearningModeApp(App):
         self._populate_lesson_table()
         self._render_help()
         self._render_empty_state()
-        if self.initial_lesson_id and get_lesson(self.initial_lesson_id):
+        if self.initial_lesson_id and self._get_lesson(self.initial_lesson_id):
             for row, lesson in enumerate(self.lessons):
                 if lesson.lesson_id == self.initial_lesson_id:
                     self.query_one("#func-table", DataTable).move_cursor(row=row)
@@ -150,7 +164,7 @@ class LearningModeApp(App):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         lesson_id = str(event.row_key.value or "")
-        if get_lesson(lesson_id) is not None:
+        if self._get_lesson(lesson_id) is not None:
             self._request_lesson(lesson_id)
 
     def _request_lesson(self, lesson_id: str, *, force: bool = False) -> None:
@@ -163,7 +177,7 @@ class LearningModeApp(App):
             self._set_status(f"{lesson_id} is already being compiled and decompiled…")
             return
 
-        lesson = get_lesson(lesson_id)
+        lesson = self._get_lesson(lesson_id)
         if lesson is None:
             self._set_status(f"Unknown learning case: {lesson_id}")
             return
@@ -181,7 +195,7 @@ class LearningModeApp(App):
         ).start()
 
     def _run_lesson_worker(self, lesson_id: str) -> None:
-        lesson = get_lesson(lesson_id)
+        lesson = self._get_lesson(lesson_id)
         if lesson is None:
             self._post_from_worker(
                 LearningFailed(lesson_id, "Learning case disappeared")
@@ -193,6 +207,9 @@ class LearningModeApp(App):
             self._post_from_worker(LearningFailed(lesson_id, str(exc)))
             return
         self._post_from_worker(LearningReady(lesson_id, result))
+
+    def _get_lesson(self, lesson_id: str) -> Lesson | None:
+        return self._lesson_by_id.get(lesson_id.strip().lower())
 
     def _post_from_worker(self, message: Message) -> None:
         try:
@@ -301,6 +318,11 @@ class LearningModeApp(App):
         help_log.write("3. The center panes show real assembly and the exact original C.")
         help_log.write("4. The Pseudo-code tab shows Ghidra's independent reconstruction.")
         help_log.write("5. Press R to rebuild the selected case; press Q to quit.\n")
+        if self.collection is not None:
+            help_log.write(
+                f"[bold]External collection[/bold]\n"
+                f"{_markup_text(str(self.collection.root))}\n"
+            )
         help_log.write(
             "[yellow]The compiler may choose different valid instructions across versions. "
             "Treat pseudo-code types and names as hypotheses.[/yellow]"

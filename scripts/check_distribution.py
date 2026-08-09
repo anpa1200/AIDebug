@@ -23,9 +23,11 @@ REQUIRED_WHEEL_SUFFIXES = {
     "debugger/scripts/unpack_detector.js",
     "learning/catalog.py",
     "learning/cases/case_common.h",
+    "learning/cases/collection.json",
     "learning/cases/mov-load.c",
     "learning/cases/switch-dispatch.c",
     "learning/live.py",
+    "learning/collection.py",
     "learning/renderer.py",
 }
 REQUIRED_SDIST_SUFFIXES = {
@@ -54,9 +56,11 @@ REQUIRED_SDIST_SUFFIXES = {
     "examples/toy_c_analysis.c",
     "learning/catalog.py",
     "learning/cases/case_common.h",
+    "learning/cases/collection.json",
     "learning/cases/mov-load.c",
     "learning/cases/switch-dispatch.c",
     "learning/live.py",
+    "learning/collection.py",
     "learning/renderer.py",
     "requirements-ai.txt",
     "requirements-dynamic.txt",

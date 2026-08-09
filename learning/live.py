@@ -15,6 +15,7 @@ from analysis import Disassembler, GhidraDecompiler, StaticAnalyzer
 from analysis.decompiler import DecompilerError
 
 from .catalog import Lesson
+from .collection import LearningCollection, LearningCollectionError
 
 
 class LearningAnalysisError(RuntimeError):
@@ -49,16 +50,27 @@ class LiveLearningAnalyzer:
         static_analyzer_factory: Callable[[], StaticAnalyzer] = StaticAnalyzer,
         disassembler_factory: Callable = Disassembler,
         decompiler_factory: Callable = GhidraDecompiler,
+        collection: LearningCollection | None = None,
     ):
         self.compiler = self._find_compiler(compiler)
         self.ghidra_headless = ghidra_headless
         self._static_analyzer_factory = static_analyzer_factory
         self._disassembler_factory = disassembler_factory
         self._decompiler_factory = decompiler_factory
+        self.collection = collection
 
     def analyze(self, lesson: Lesson) -> AnalyzedLesson:
-        source_file, source = self._read_case(lesson.lesson_id)
-        common_header = self._read_common_header()
+        if self.collection is None:
+            source_file, source = self._read_case(lesson.lesson_id)
+            common_header = self._read_common_header()
+            source_label = f"learning/cases/{source_file}"
+        else:
+            try:
+                source_label, source = self.collection.read_case(lesson.lesson_id)
+                common_header = self.collection.read_common_header()
+            except LearningCollectionError as exc:
+                raise LearningAnalysisError(str(exc)) from exc
+            source_file = Path(source_label).name
 
         with tempfile.TemporaryDirectory(prefix="aidebug-learning-") as temporary:
             working = Path(temporary)
@@ -111,7 +123,7 @@ class LiveLearningAnalyzer:
 
             return AnalyzedLesson(
                 lesson=lesson,
-                source_file=f"learning/cases/{source_file}",
+                source_file=source_label,
                 source=source,
                 assembly=assembly,
                 pseudocode=decompiled.code,

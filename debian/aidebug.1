@@ -51,12 +51,18 @@ Run a non-interactive active-debug command. Repeatable.
 Use PATH as the GDB executable for active debug mode.
 .TP
 .BR \-\-learn " " [TOPIC]
-Open 53 real learning cases in the full-screen GUI. Every lesson has its own
+Open 100 real learning cases in the full-screen GUI. Every lesson has its own
 source file. Selecting a lesson compiles only that trusted C file into a
 temporary, non-executed ELF, displays the complete real assembly and exact
 source, and reconstructs pseudo-code with Ghidra. Add
 .B \-\-no-tui
 for the text catalog or report.
+.TP
+.BR \-\-learning-collection " " DIR
+Load standalone C learning cases from DIR. The directory must contain
+case_common.h and matching C files; collection.json is optional. Source paths
+are validated and the temporary ELF is never executed. Review external source
+before allowing the local compiler to parse it.
 .TP
 .BR \-\-learning-compiler " " PATH
 Use PATH as the ELF compiler for an exact learning lesson.
