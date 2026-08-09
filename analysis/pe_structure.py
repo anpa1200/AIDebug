@@ -36,6 +36,99 @@ DATA_DIRECTORY_NAMES = (
     "RESERVED",
 )
 
+COFF_CHARACTERISTIC_FLAGS = (
+    (0x0001, "IMAGE_FILE_RELOCS_STRIPPED"),
+    (0x0002, "IMAGE_FILE_EXECUTABLE_IMAGE"),
+    (0x0004, "IMAGE_FILE_LINE_NUMS_STRIPPED"),
+    (0x0008, "IMAGE_FILE_LOCAL_SYMS_STRIPPED"),
+    (0x0010, "IMAGE_FILE_AGGRESSIVE_WS_TRIM"),
+    (0x0020, "IMAGE_FILE_LARGE_ADDRESS_AWARE"),
+    (0x0040, "IMAGE_FILE_RESERVED_0040"),
+    (0x0080, "IMAGE_FILE_BYTES_REVERSED_LO"),
+    (0x0100, "IMAGE_FILE_32BIT_MACHINE"),
+    (0x0200, "IMAGE_FILE_DEBUG_STRIPPED"),
+    (0x0400, "IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP"),
+    (0x0800, "IMAGE_FILE_NET_RUN_FROM_SWAP"),
+    (0x1000, "IMAGE_FILE_SYSTEM"),
+    (0x2000, "IMAGE_FILE_DLL"),
+    (0x4000, "IMAGE_FILE_UP_SYSTEM_ONLY"),
+    (0x8000, "IMAGE_FILE_BYTES_REVERSED_HI"),
+)
+
+DLL_CHARACTERISTIC_FLAGS = (
+    (0x0020, "IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA"),
+    (0x0040, "IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE"),
+    (0x0080, "IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY"),
+    (0x0100, "IMAGE_DLLCHARACTERISTICS_NX_COMPAT"),
+    (0x0200, "IMAGE_DLLCHARACTERISTICS_NO_ISOLATION"),
+    (0x0400, "IMAGE_DLLCHARACTERISTICS_NO_SEH"),
+    (0x0800, "IMAGE_DLLCHARACTERISTICS_NO_BIND"),
+    (0x1000, "IMAGE_DLLCHARACTERISTICS_APPCONTAINER"),
+    (0x2000, "IMAGE_DLLCHARACTERISTICS_WDM_DRIVER"),
+    (0x4000, "IMAGE_DLLCHARACTERISTICS_GUARD_CF"),
+    (0x8000, "IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE"),
+)
+
+
+def decode_coff_characteristics(value: int) -> tuple[str, ...]:
+    """Decode an IMAGE_FILE_HEADER Characteristics bitmask without hiding it."""
+    numeric = int(value)
+    decoded = [name for mask, name in COFF_CHARACTERISTIC_FLAGS if numeric & mask]
+    known_mask = sum(mask for mask, _name in COFF_CHARACTERISTIC_FLAGS)
+    unknown = numeric & ~known_mask
+    if unknown:
+        decoded.append(f"UNKNOWN_0x{unknown:x}")
+    return tuple(decoded)
+
+
+def decode_dll_characteristics(value: int) -> tuple[str, ...]:
+    """Decode an Optional Header DllCharacteristics bitmask."""
+    numeric = int(value)
+    decoded = [name for mask, name in DLL_CHARACTERISTIC_FLAGS if numeric & mask]
+    known_mask = sum(mask for mask, _name in DLL_CHARACTERISTIC_FLAGS)
+    unknown = numeric & ~known_mask
+    if unknown:
+        decoded.append(f"UNKNOWN_0x{unknown:x}")
+    return tuple(decoded)
+
+
+def dll_mitigation_clues(value: int, *, pe32_plus: bool) -> tuple[str, ...]:
+    """Translate loader flags into cautious mitigation evidence statements."""
+    numeric = int(value)
+    clues = [
+        (
+            "ASLR: declared via DYNAMIC_BASE"
+            if numeric & 0x0040
+            else "ASLR: not declared (DYNAMIC_BASE absent)"
+        ),
+        (
+            "DEP/NX: declared via NX_COMPAT"
+            if numeric & 0x0100
+            else "DEP/NX: not declared (NX_COMPAT absent)"
+        ),
+        (
+            "CFG: declared via GUARD_CF; validate Load Config guard metadata"
+            if numeric & 0x4000
+            else "CFG: not declared (GUARD_CF absent)"
+        ),
+    ]
+    if numeric & 0x0020:
+        if pe32_plus:
+            clues.append(
+                "High-entropy ASLR: requested; meaningful with DYNAMIC_BASE"
+            )
+        else:
+            clues.append(
+                "High-entropy VA flag is set on PE32; validate actual loader behavior"
+            )
+    if numeric & 0x0080:
+        clues.append("Code integrity: FORCE_INTEGRITY declared")
+    if numeric & 0x1000:
+        clues.append("AppContainer: image declares AppContainer compatibility")
+    if numeric & 0x0400:
+        clues.append("SEH: image declares that it does not use structured exception handling")
+    return tuple(clues)
+
 
 @dataclass(frozen=True)
 class PEHeaderField:
@@ -43,6 +136,8 @@ class PEHeaderField:
     value: Any
     file_offset: int | None = None
     size: int | None = None
+    decoded_flags: tuple[str, ...] = ()
+    mitigation_clues: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -203,12 +298,33 @@ class PEStructureAnalyzer:
                 continue
             file_offset = metadata.get("FileOffset")
             size = metadata.get("Size")
+            value = metadata.get("Value")
+            decoded_flags = ()
+            mitigation_clues = ()
+            if (
+                name == "COFF file header"
+                and field_name == "Characteristics"
+                and isinstance(value, int)
+            ):
+                decoded_flags = decode_coff_characteristics(value)
+            elif (
+                name == "Optional header"
+                and field_name == "DllCharacteristics"
+                and isinstance(value, int)
+            ):
+                decoded_flags = decode_dll_characteristics(value)
+                mitigation_clues = dll_mitigation_clues(
+                    value,
+                    pe32_plus=int(getattr(structure, "Magic", 0)) == 0x20B,
+                )
             fields.append(
                 PEHeaderField(
                     name=str(field_name),
-                    value=metadata.get("Value"),
+                    value=value,
                     file_offset=(int(file_offset) if file_offset is not None else None),
                     size=(int(size) if size is not None else None),
+                    decoded_flags=decoded_flags,
+                    mitigation_clues=mitigation_clues,
                 )
             )
         return PEHeader(name=name, fields=tuple(fields))

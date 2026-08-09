@@ -110,10 +110,15 @@ Every loaded binary receives a whole-file Hex view plus file metadata. When the
 file is PE32 or PE32+, AIDebug automatically opens the richer PE workspace with
 Overview, Hex, Headers, Sections, Directories, Imports, and Exports tabs. The
 header view includes the DOS header, NT signature, COFF file header, and
-optional header. Imports include normal and delay-loaded entries; exports
-include ordinals and forwarders. Overlay offset and size are reported when
-extra data follows the mapped image. `P` remains an additional shortcut for
-analysts accustomed to opening PE Structure directly.
+optional header. The raw COFF `Characteristics` bitmask is preserved and each
+set flag is decoded by name, including executable, DLL, system, relocation,
+32-bit-machine, and large-address-aware flags. Optional-header
+`DllCharacteristics` flags are also decoded, with cautious mitigation clues for
+ASLR, high-entropy VA, DEP/NX, CFG, integrity checks, AppContainer, and SEH.
+Imports include normal and delay-loaded entries; exports include ordinals and
+forwarders. Overlay offset and size are reported when extra data follows the
+mapped image. `P` remains an additional shortcut for analysts accustomed to
+opening PE Structure directly.
 
 The Hex tab covers every byte of the exact file content AIDebug hashed. It uses
 4 KiB pages instead of creating one unbounded terminal document: use

@@ -194,6 +194,16 @@ PEStructureScreen {
                     f"{offset}  {size:>4}  {_safe(field.name, 80):<29} "
                     f"{_header_value(field.value)}"
                 )
+                for flag_name in field.decoded_flags:
+                    log.write(f"{'':17}  [green]↳ {_safe(flag_name, 80)}[/green]")
+                if field.mitigation_clues:
+                    log.write(f"{'':17}  [bold cyan]Mitigation clues[/bold cyan]")
+                    for clue in field.mitigation_clues:
+                        log.write(f"{'':17}  [cyan]• {_safe(clue, 160)}[/cyan]")
+                    log.write(
+                        f"{'':17}  [dim]Header flags are clues, not proof of "
+                        "effective runtime policy.[/dim]"
+                    )
             log.write("")
 
     def _render_sections(self) -> None:

@@ -13,6 +13,9 @@ from analysis.pe_structure import (
     PESectionRecord,
     PEStructure,
     PEStructureAnalyzer,
+    decode_coff_characteristics,
+    decode_dll_characteristics,
+    dll_mitigation_clues,
     page_count,
     render_hex_page,
 )
@@ -58,11 +61,20 @@ class FakePE:
         self.DOS_HEADER.e_lfanew = 0x80
         self.NT_HEADERS = SimpleNamespace(Signature=0x4550)
         self.FILE_HEADER = FakeStructure(
-            "IMAGE_FILE_HEADER", 0x84, {"Machine": 0x8664, "NumberOfSections": 1}
+            "IMAGE_FILE_HEADER",
+            0x84,
+            {
+                "Machine": 0x8664,
+                "NumberOfSections": 1,
+                "Characteristics": 0x3123,
+            },
         )
         self.OPTIONAL_HEADER = FakeStructure(
-            "IMAGE_OPTIONAL_HEADER64", 0x98, {"Magic": 0x20B}
+            "IMAGE_OPTIONAL_HEADER64",
+            0x98,
+            {"Magic": 0x20B, "DllCharacteristics": 0x41E0},
         )
+        self.OPTIONAL_HEADER.Magic = 0x20B
         self.OPTIONAL_HEADER.ImageBase = 0x140000000
         self.OPTIONAL_HEADER.AddressOfEntryPoint = 0x1010
         self.OPTIONAL_HEADER.DATA_DIRECTORY = [
@@ -107,6 +119,43 @@ def _model(raw_data=None):
         entry_point=0x140001010,
         headers=(
             PEHeader("DOS header", (PEHeaderField("e_magic", 0x5A4D, 0, 2),)),
+            PEHeader(
+                "COFF file header",
+                (
+                    PEHeaderField(
+                        "Characteristics",
+                        0x2022,
+                        0x96,
+                        2,
+                        (
+                            "IMAGE_FILE_EXECUTABLE_IMAGE",
+                            "IMAGE_FILE_LARGE_ADDRESS_AWARE",
+                            "IMAGE_FILE_DLL",
+                        ),
+                    ),
+                ),
+            ),
+            PEHeader(
+                "Optional header",
+                (
+                    PEHeaderField(
+                        name="DllCharacteristics",
+                        value=0x4140,
+                        file_offset=0xDE,
+                        size=2,
+                        decoded_flags=(
+                            "IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE",
+                            "IMAGE_DLLCHARACTERISTICS_NX_COMPAT",
+                            "IMAGE_DLLCHARACTERISTICS_GUARD_CF",
+                        ),
+                        mitigation_clues=(
+                            "ASLR: declared via DYNAMIC_BASE",
+                            "DEP/NX: declared via NX_COMPAT",
+                            "CFG: declared via GUARD_CF; validate Load Config guard metadata",
+                        ),
+                    ),
+                ),
+            ),
         ),
         data_directories=(PEDataDirectory(0, "EXPORT", 0x3000, 0x80),),
         sections=(
@@ -153,9 +202,68 @@ def test_pe_structure_uses_analyzed_bytes_and_recovers_all_tables(monkeypatch):
         ("delay", "ordinal_7"),
     ]
     assert model.exports[0].forwarder == "OTHER.Target"
+    characteristics = next(
+        field
+        for header in model.headers
+        if header.name == "COFF file header"
+        for field in header.fields
+        if field.name == "Characteristics"
+    )
+    assert characteristics.value == 0x3123
+    assert characteristics.decoded_flags == (
+        "IMAGE_FILE_RELOCS_STRIPPED",
+        "IMAGE_FILE_EXECUTABLE_IMAGE",
+        "IMAGE_FILE_LARGE_ADDRESS_AWARE",
+        "IMAGE_FILE_32BIT_MACHINE",
+        "IMAGE_FILE_SYSTEM",
+        "IMAGE_FILE_DLL",
+    )
+    dll_characteristics = next(
+        field
+        for header in model.headers
+        if header.name == "Optional header"
+        for field in header.fields
+        if field.name == "DllCharacteristics"
+    )
+    assert dll_characteristics.value == 0x41E0
+    assert dll_characteristics.decoded_flags == (
+        "IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA",
+        "IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE",
+        "IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY",
+        "IMAGE_DLLCHARACTERISTICS_NX_COMPAT",
+        "IMAGE_DLLCHARACTERISTICS_GUARD_CF",
+    )
+    assert dll_characteristics.mitigation_clues == (
+        "ASLR: declared via DYNAMIC_BASE",
+        "DEP/NX: declared via NX_COMPAT",
+        "CFG: declared via GUARD_CF; validate Load Config guard metadata",
+        "High-entropy ASLR: requested; meaningful with DYNAMIC_BASE",
+        "Code integrity: FORCE_INTEGRITY declared",
+    )
     assert model.overlay_offset == 0x800
     assert model.overlay_size == 2048
     assert fake_pe.closed
+
+
+def test_decode_coff_characteristics_preserves_unknown_bits():
+    assert decode_coff_characteristics(0x12002) == (
+        "IMAGE_FILE_EXECUTABLE_IMAGE",
+        "IMAGE_FILE_DLL",
+        "UNKNOWN_0x10000",
+    )
+
+
+def test_dll_characteristics_decode_and_missing_mitigation_clues():
+    assert decode_dll_characteristics(0x141) == (
+        "IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE",
+        "IMAGE_DLLCHARACTERISTICS_NX_COMPAT",
+        "UNKNOWN_0x1",
+    )
+    assert dll_mitigation_clues(0, pe32_plus=False) == (
+        "ASLR: not declared (DYNAMIC_BASE absent)",
+        "DEP/NX: not declared (NX_COMPAT absent)",
+        "CFG: not declared (GUARD_CF absent)",
+    )
 
 
 def test_pe_structure_rejects_non_pe_input():
@@ -203,6 +311,20 @@ def test_pe_structure_screen_pages_whole_file():
             )
             assert "page 2/2" in rendered
             assert "00001000" in rendered
+            tabs.active = "pe-headers"
+            await pilot.pause()
+            headers = "\n".join(
+                line.text for line in screen.query_one("#pe-headers-log").lines
+            )
+            assert "Characteristics" in headers
+            assert "IMAGE_FILE_EXECUTABLE_IMAGE" in headers
+            assert "IMAGE_FILE_LARGE_ADDRESS_AWARE" in headers
+            assert "IMAGE_FILE_DLL" in headers
+            assert "IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE" in headers
+            assert "IMAGE_DLLCHARACTERISTICS_NX_COMPAT" in headers
+            assert "IMAGE_DLLCHARACTERISTICS_GUARD_CF" in headers
+            assert "ASLR: declared via DYNAMIC_BASE" in headers
+            assert "Header flags are clues, not proof" in headers
             assert {pane.id for pane in screen.query("TabbedContent TabPane")} == {
                 "pe-overview",
                 "pe-hex",
