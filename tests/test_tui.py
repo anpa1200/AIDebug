@@ -19,10 +19,11 @@ class FakeDisassembler:
 class FakeStore:
     db_path = ":memory:"
 
-    def __init__(self, cached=None):
+    def __init__(self, cached=None, *, history=False):
         self.analyses = []
         self.patterns = []
         self.cached = cached or {}
+        self.history = history
 
     def get_cached_analysis(self, session_id, address, cache_key=None):
         return self.cached.get(address)
@@ -32,6 +33,43 @@ class FakeStore:
 
     def save_patterns(self, session_id, address, patterns):
         self.patterns.append((session_id, address, patterns))
+
+    def find_sessions_by_sha256(self, sha256, *, exclude_session_id=None):
+        if not self.history:
+            return []
+        return [{
+            "id": 9,
+            "status": "completed",
+            "analysis_mode": "static",
+            "analyzer": "Previous analyzer",
+            "created_at": "2026-08-09 09:00:00",
+            "function_count": 1,
+            "pattern_count": 1,
+            "api_call_count": 0,
+            "network_event_count": 0,
+            "runtime_event_count": 0,
+            "critical_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 1,
+        }]
+
+    def get_function_history_by_sha256(
+        self,
+        sha256,
+        *,
+        exclude_session_id=None,
+        limit=300,
+    ):
+        if not self.history:
+            return []
+        return [{
+            "session_id": 9,
+            "address": 0x401000,
+            "name": "previous_name",
+            "risk_level": "LOW",
+            "ai_analysis_json": '{"summary":"Previous AI summary"}',
+        }]
 
 
 class FakeAnalyzer:
@@ -87,7 +125,7 @@ def _analysis(address, name="function"):
     )
 
 
-def _app(analyzer, *, allow_bulk=True, max_bulk=1, cached=False):
+def _app(analyzer, *, allow_bulk=True, max_bulk=1, cached=False, history=False):
     functions = [
         _function(0x401000, "[bold red]first[/bold red]"),
         _function(0x402000, "second"),
@@ -109,7 +147,7 @@ def _app(analyzer, *, allow_bulk=True, max_bulk=1, cached=False):
         binary_info,
         FakeDisassembler(functions),
         analyzer,
-        FakeStore(cached_results),
+        FakeStore(cached_results, history=history),
         1,
         [function.address for function in functions],
         allow_bulk_analysis=allow_bulk,
@@ -119,7 +157,7 @@ def _app(analyzer, *, allow_bulk=True, max_bulk=1, cached=False):
 
 def test_tui_headless_mount_tabs_selection_and_bounded_batch():
     async def scenario():
-        app = _app(FakeAnalyzer(), max_bulk=1, cached=True)
+        app = _app(FakeAnalyzer(), max_bulk=1, cached=True, history=True)
         async with app.run_test() as pilot:
             table = app.query_one("#func-table")
             assert table.row_count == 2
@@ -128,11 +166,19 @@ def test_tui_headless_mount_tabs_selection_and_bounded_batch():
                 "tab-cfg",
                 "tab-patterns",
                 "tab-decompile",
+                "tab-history",
             }
             tabs = app.query_one("#right-tabs")
             tabs.active = "tab-cfg"
             await pilot.pause()
             assert tabs.active == "tab-cfg"
+
+            await pilot.press("ctrl+h")
+            await pilot.pause()
+            assert tabs.active == "tab-history"
+            history = "\n".join(line.text for line in app.query_one("#history-log").lines)
+            assert "Previous AI summary" in history
+            assert "session 9" in history
 
             table.focus()
             table.move_cursor(row=1)

@@ -13,6 +13,8 @@ aidebug --learn mov-load
 aidebug --learn lea-arithmetic
 aidebug --learn movsxd
 aidebug --learn xchg
+aidebug --learn test-bit
+aidebug --learn binary-search
 ```
 
 Each result shows three views of the same selected case:

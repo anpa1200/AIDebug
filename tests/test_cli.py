@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import shutil
@@ -51,6 +52,7 @@ def test_main_help_runs():
     assert "--decompile" in result.stdout
     assert "--decompile-all" in result.stdout
     assert "--learn" in result.stdout
+    assert "--history" in result.stdout
     assert "--learning-compiler" in result.stdout
     assert "--breakpoint" in result.stdout
 
@@ -102,6 +104,99 @@ def test_session_list_without_api_key(tmp_path):
     )
     assert result.returncode == 0
     assert "No analysis sessions found" in result.stdout
+
+
+def test_hash_history_accepts_file_and_prints_prior_ai_findings(tmp_path, capsys):
+    sample = tmp_path / "sample.bin"
+    sample.write_bytes(b"same sample bytes")
+    expected_hash = hashlib.sha256(sample.read_bytes()).hexdigest()
+
+    class FakeStore:
+        db_path = str(tmp_path / "traces.db")
+
+        def find_sessions_by_sha256(self, sha256):
+            assert sha256 == expected_hash
+            return [{
+                "id": 7,
+                "status": "completed",
+                "analysis_mode": "static",
+                "analyzer": "Claude test",
+                "created_at": "2026-08-09 10:00:00",
+                "completed_at": "2026-08-09 10:01:00",
+                "function_count": 1,
+                "pattern_count": 2,
+                "api_call_count": 0,
+                "network_event_count": 0,
+                "runtime_event_count": 0,
+                "critical_count": 0,
+                "high_count": 1,
+                "medium_count": 0,
+                "low_count": 0,
+            }]
+
+        def get_all_traces(self, session_id):
+            assert session_id == 7
+            return [{
+                "address": 0x401000,
+                "name": "sub_401000",
+                "risk_level": "HIGH",
+                "mitre_technique": "T1059",
+                "ai_analysis_json": json.dumps({
+                    "suggested_name": "possible_command_runner",
+                    "summary": "May launch a command interpreter.",
+                }),
+            }]
+
+    sessions = main.show_hash_history(FakeStore(), str(sample))
+    output = capsys.readouterr().out
+    assert sessions[0]["id"] == 7
+    assert expected_hash in output
+    assert "possible_command_runner" in output
+    assert "aidebug --session 7 --json-export" in output
+
+
+def test_hash_history_rejects_partial_hash():
+    with pytest.raises(main.CLIError, match="full 64-character SHA-256"):
+        main._history_sha256("abc123")
+
+
+@pytest.mark.skipif(not os.path.isfile("/bin/true"), reason="safe ELF fixture unavailable")
+def test_reopening_same_binary_restores_hash_history_and_finishes_sessions(tmp_path):
+    db_path = tmp_path / "history.db"
+    command = [
+        sys.executable,
+        "main.py",
+        "--binary",
+        "/bin/true",
+        "--offline",
+        "--no-tui",
+        "--max-functions",
+        "1",
+        "--db",
+        str(db_path),
+    ]
+    first = subprocess.run(command, check=False, text=True, capture_output=True)
+    second = subprocess.run(command, check=False, text=True, capture_output=True)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert "Recognized SHA-256" not in first.stdout
+    assert "Recognized SHA-256" in second.stdout
+    assert "Compatible function results will be restored automatically" in second.stdout
+
+    connection = sqlite3.connect(db_path)
+    try:
+        rows = connection.execute(
+            "SELECT analysis_mode, analyzer, status, completed_at "
+            "FROM sessions ORDER BY id"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert len(rows) == 2
+    assert all(row[0] == "static" for row in rows)
+    assert all(row[1] == "Deterministic offline analysis" for row in rows)
+    assert all(row[2] == "completed" for row in rows)
+    assert all(row[3] for row in rows)
 
 
 def test_no_operation_has_no_database_side_effect(tmp_path):
