@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 2.0.0 - 2026-08-09
+
+- Added the main-GUI Hex / PE workspace. Every loaded binary can be inspected
+  through a bounded whole-file hexadecimal view, while PE32 and PE32+ inputs
+  additionally expose DOS, NT, COFF, and optional headers, sections, data
+  directories, normal and delay imports, exports, forwarders, and overlays.
+- Added complete Ghidra-backed reconstruction for discovered functions,
+  assembly-grounded optional LLM verification, and analyst-controlled local
+  ELF debugging with breakpoints, stepping, register deltas, and function
+  input/output candidates.
+- Added safe one-file C analysis through isolated temporary ELF compilation,
+  with the generated artifact analyzed but never executed.
+- Replaced simulated learning cards with 100 independently compiled C cases
+  that show original source, real compiler output, and Ghidra pseudo-code in
+  the main GUI. Added validated external learning collections with an optional
+  schema-versioned manifest.
+- Added SHA-256-indexed local analysis history, compatible finding restoration,
+  session lifecycle metadata, and file-or-hash history lookup.
+- Raised the supported Textual floor to 8.2.8 and consolidated the packaging,
+  safety, dependency, reporting, and release-validation contracts for the 2.x
+  line.
+
 ## 1.3.4 - 2026-08-09
 
 - Added SHA-256-indexed local analysis history. Reopening identical sample

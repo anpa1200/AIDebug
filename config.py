@@ -54,4 +54,4 @@ INSTRUMENTATION_READY_TIMEOUT_SECONDS = 3.0
 
 # --- UI ---
 APP_TITLE = "AIDebug — AI-Assisted Malware Analyzer"
-APP_VERSION = "1.3.4"
+APP_VERSION = "2.0.0"

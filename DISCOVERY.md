@@ -4,15 +4,14 @@ This file keeps external promotion consistent. Use one flagship message per
 platform: AIDebug accelerates malware triage and produces analyst-review seed
 material, not final automated truth.
 
-> Draft status: this copy describes v1.3.4 source behavior on `main`. Replace
-> the historical v1.1.0 release link and PyPI install claims only after v1.3.4
-> is tagged and available from PyPI.
+> Release status: this copy describes v2.0.0 behavior. Use the version-matched
+> GitHub release and PyPI provenance when citing packaged capabilities.
 
 ## Canonical Links
 
 - Repository: https://github.com/anpa1200/AIDebug
 - PyPI: https://pypi.org/project/1200km-aidebug/
-- Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
+- Release: https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0
 - Article: https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
 - Portfolio hub: https://1200km.com/
 
@@ -132,7 +131,7 @@ structured outputs that malware analysts and detection engineers can review.
 
 GitHub: https://github.com/anpa1200/AIDebug
 PyPI: pip install 1200km-aidebug
-Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
+Release: https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0
 ```
 
 ### X / Twitter Thread
@@ -178,7 +177,7 @@ review-ready artifacts that still require validation before operational use.
 
 GitHub: https://github.com/anpa1200/AIDebug
 PyPI: https://pypi.org/project/1200km-aidebug/
-Release: https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0
+Release: https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0
 
 Best,
 Andrey Pautov
