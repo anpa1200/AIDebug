@@ -15,6 +15,10 @@ def test_json_export_builds_risk_summary_and_iocs():
         "file_format": "PE",
         "analysis_origin": "binary",
         "compiled_sha256": "",
+        "analysis_mode": "static",
+        "analyzer": "Claude test",
+        "status": "completed",
+        "completed_at": "2026-06-15T00:03:00Z",
         "created_at": "2026-06-15T00:00:00Z",
     }
     traces = [
@@ -22,6 +26,8 @@ def test_json_export_builds_risk_summary_and_iocs():
             "address": 0x401000,
             "name": "sub_401000",
             "instruction_count": 12,
+            "disassembly": "mov eax, 1\nret",
+            "analysis_cache_key": "test-cache-v1",
             "risk_level": "HIGH",
             "mitre_technique": "T1027",
             "strings_referenced": json.dumps(["c2.example.test", ".text"]),
@@ -105,6 +111,8 @@ def test_json_export_builds_risk_summary_and_iocs():
     assert doc["summary"]["runtime_events_logged"] == 1
     assert doc["summary"]["ioc_strings"][0]["value"] == "c2.example.test"
     assert doc["functions"][0]["name"] == "decode_config"
+    assert doc["functions"][0]["disassembly"].startswith("mov eax")
+    assert doc["functions"][0]["analysis_cache_key"] == "test-cache-v1"
     assert doc["functions"][0]["size_bytes"] is None
     assert doc["functions"][0]["deterministic_patterns"][0]["severity"] == "HIGH"
     assert doc["functions"][0]["decompilation"]["confidence"] == "reconstructed"
@@ -113,6 +121,14 @@ def test_json_export_builds_risk_summary_and_iocs():
     assert doc["network_events"][0]["ip"] == "203.0.113.8"
     assert doc["runtime_events"][0]["payload"]["confidence"] == "heuristic"
     assert doc["runtime_events"][0]["timestamp"] == "2026-06-15T00:02:00Z"
+    assert doc["session"] == {
+        "id": 7,
+        "created_at": "2026-06-15T00:00:00Z",
+        "completed_at": "2026-06-15T00:03:00Z",
+        "mode": "static",
+        "analyzer": "Claude test",
+        "status": "completed",
+    }
     assert "sensitive" in doc["_privacy_notice"]
 
 

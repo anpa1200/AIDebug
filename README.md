@@ -15,7 +15,7 @@ reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning in the main full-screen GUI, ATT&CK candidates, YARA seeds,
 and analyst reports.
 
-> **Release status:** the source tree is the AIDebug v1.3.3 candidate. Until a
+> **Release status:** the source tree is the AIDebug v1.3.4 candidate. Until a
 > matching release is tagged and published, PyPI continues to serve historical
 > v1.1.0; install from this repository for the current feature set.
 
@@ -70,7 +70,8 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | Full reconstruction file | One provenance-marked C-like file for every discovered function |
 | LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
 | Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
-| Live Learning Mode | Main-GUI exploration of 47 standalone C cases with real compiler output, AIDebug disassembly, and Ghidra reconstruction |
+| Live Learning Mode | Main-GUI exploration of 53 standalone C cases with real compiler output, AIDebug disassembly, and Ghidra reconstruction |
+| Hash-indexed analysis history | Local recovery of prior sessions and compatible AI findings when the same SHA-256 is opened again |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -159,7 +160,7 @@ content to an AI provider, and never executes the compiled lesson artifact.
 
 #### Launch the GUI
 
-Open the complete 47-case catalog:
+Open the complete 53-case catalog:
 
 ```bash
 aidebug --learn
@@ -173,6 +174,7 @@ aidebug --learn lea-arithmetic
 aidebug --learn movsxd
 aidebug --learn xchg
 aidebug --learn subtract
+aidebug --learn binary-search
 ```
 
 Search by title, category, instruction, or concept to open a filtered catalog:
@@ -189,7 +191,7 @@ A broader search opens only matching cases.
 
 | GUI area | Evidence shown |
 |---|---|
-| Learning Cases | Search result or all 47 standalone cases, with ID, category, and lesson title |
+| Learning Cases | Search result or all 53 standalone cases, with ID, category, and lesson title |
 | Real Disassembly | Actual function address, instruction bytes, and compiler-generated assembly |
 | Original C Source | Exact contents and repository path of the selected lesson file |
 | Pseudo-code tab | Ghidra's independent C-like reconstruction from the generated ELF |
@@ -317,6 +319,32 @@ Windows. Override it per case with `--db /controlled/path/session.db` or
 `AIDEBUG_DB_PATH`. Existing repository-local `traces.db` files are not migrated
 automatically.
 
+Every analysis session records the sample SHA-256, mode, analyzer, lifecycle
+status, function findings, decompilation, deterministic patterns, and bounded
+runtime evidence. When the same bytes are opened again—even from a different
+filename or path—AIDebug finds prior sessions by SHA-256. The main GUI adds a
+`History` tab, and compatible stored function analyses are restored without a
+second remote-AI request. Separate sessions are retained so a later run never
+silently overwrites earlier evidence.
+
+Query the database with either the sample file or its full SHA-256:
+
+```bash
+aidebug --history /path/to/sample.exe
+aidebug --history 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+The history view lists previous session metadata, evidence counts, risk counts,
+and stored AI function summaries. Use the displayed session ID to export every
+persisted field:
+
+```bash
+aidebug --session 7 --json-export --out-dir reports/
+```
+
+In the main GUI, press `Ctrl+H` to open hash-matched history. The database and
+exports can contain sensitive sample evidence; protect them as case data.
+
 ### Source checkout with all optional capabilities
 
 ```bash
@@ -337,7 +365,7 @@ material:
   loop for documentation.
 - [`examples/toy_c_analysis.c`](examples/toy_c_analysis.c) - a benign C fixture
   for sandboxed temporary-ELF analysis.
-- [`learning/cases/`](learning/cases/) - 47 benign, standalone C functions used
+- [`learning/cases/`](learning/cases/) - 53 benign, standalone C functions used
   by the real Learning Mode compile/disassemble/decompile pipeline.
 - [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
   - hand-authored schema-v2 offline session example with an all-zero mock hash.
@@ -388,7 +416,7 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 | Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
 | Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
 | Active debug | Local ELF execution through GDB/MI with analyst-controlled breakpoints and instruction stepping |
-| Learning | 47 individually compiled x86-64 source cases in the main GUI, with exact C, real assembly, build evidence, and Ghidra output |
+| Learning | 53 individually compiled x86-64 source cases in the main GUI, with exact C, real assembly, build evidence, and Ghidra output |
 | Reports | HTML, versioned AIDebug JSON, and YARA candidates |
 
 ## Safety

@@ -13,7 +13,7 @@ import warnings
 
 import config
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     file_format TEXT,
     analysis_origin TEXT,
     compiled_sha256 TEXT,
+    analysis_mode TEXT,
+    analyzer TEXT,
+    status TEXT DEFAULT 'running',
+    completed_at TEXT,
     created_at  TEXT    DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -103,6 +107,7 @@ CREATE TABLE IF NOT EXISTS runtime_events (
 
 CREATE INDEX IF NOT EXISTS idx_traces_session  ON function_traces(session_id);
 CREATE INDEX IF NOT EXISTS idx_traces_risk     ON function_traces(risk_level);
+CREATE INDEX IF NOT EXISTS idx_sessions_sha256 ON sessions(sha256);
 CREATE INDEX IF NOT EXISTS idx_api_session     ON api_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_net_session     ON network_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_pat_session     ON detected_patterns(session_id);
@@ -271,9 +276,20 @@ class TraceStore:
         session_columns = {
             row['name'] for row in self.conn.execute('PRAGMA table_info(sessions)')
         }
-        for name in ('file_format', 'analysis_origin', 'compiled_sha256'):
+        session_migrations = {
+            'file_format': 'TEXT',
+            'analysis_origin': 'TEXT',
+            'compiled_sha256': 'TEXT',
+            'analysis_mode': 'TEXT',
+            'analyzer': 'TEXT',
+            'status': "TEXT DEFAULT 'legacy'",
+            'completed_at': 'TEXT',
+        }
+        for name, declaration in session_migrations.items():
             if name not in session_columns:
-                self.conn.execute(f'ALTER TABLE sessions ADD COLUMN {name} TEXT')
+                self.conn.execute(
+                    f'ALTER TABLE sessions ADD COLUMN {name} {declaration}'
+                )
         self.conn.execute(f'PRAGMA user_version={SCHEMA_VERSION}')
 
     def _record_event_drop(self, table: str, session_id: int):
@@ -354,26 +370,50 @@ class TraceStore:
     # Sessions
     # ------------------------------------------------------------------
 
-    def create_session(self, binary_info) -> int:
+    def create_session(
+        self,
+        binary_info,
+        *,
+        mode: str = 'static',
+        analyzer: str = '',
+    ) -> int:
         with self._lock, self.conn:
             self._ensure_open()
             cur = self.conn.execute(
                 "INSERT INTO sessions "
                 "(binary_path, filename, sha256, arch, bits, os_target, file_format, "
-                "analysis_origin, compiled_sha256) VALUES (?,?,?,?,?,?,?,?,?)",
+                "analysis_origin, compiled_sha256, analysis_mode, analyzer, status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     self._bounded_text(binary_info.path, 8_192),
                     self._bounded_text(binary_info.filename, 1_024),
-                    self._bounded_text(binary_info.sha256, 128),
+                    self._bounded_text(binary_info.sha256, 128).lower(),
                     self._bounded_text(binary_info.arch, 128),
                     self._bounded_int(binary_info.bits, 0, 128),
                     self._bounded_text(binary_info.os_target, 128),
                     self._bounded_text(getattr(binary_info, 'file_format', ''), 128),
                     self._bounded_text(getattr(binary_info, 'analysis_origin', 'binary'), 256),
                     self._bounded_text(getattr(binary_info, 'compiled_sha256', '') or '', 128),
+                    self._bounded_text(mode, 32),
+                    self._bounded_text(analyzer, 256),
+                    'running',
                 ),
             )
             return cur.lastrowid
+
+    def finish_session(self, session_id: int, status: str = 'completed') -> None:
+        """Mark a persisted analysis session as completed, failed, or interrupted."""
+        normalized = str(status).strip().lower()
+        if normalized not in {'completed', 'failed', 'interrupted'}:
+            raise ValueError('Session status must be completed, failed, or interrupted')
+        with self._lock, self.conn:
+            self._ensure_open()
+            cursor = self.conn.execute(
+                "UPDATE sessions SET status=?, completed_at=CURRENT_TIMESTAMP WHERE id=?",
+                (normalized, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f'Unknown analysis session: {session_id}')
 
     def list_sessions(self) -> list:
         with self._lock:
@@ -390,6 +430,88 @@ class TraceStore:
                 "SELECT * FROM sessions WHERE id=?", (session_id,)
             ).fetchone()
             return dict(row) if row else None
+
+    @staticmethod
+    def _validated_sha256(sha256: str) -> str:
+        normalized = str(sha256 or '').strip().lower()
+        if not re.fullmatch(r'[0-9a-f]{64}', normalized):
+            raise ValueError('SHA-256 must contain exactly 64 hexadecimal characters')
+        return normalized
+
+    def find_sessions_by_sha256(
+        self,
+        sha256: str,
+        *,
+        exclude_session_id: int | None = None,
+    ) -> list:
+        """Return prior sessions and persisted evidence counts for one sample hash."""
+        normalized = self._validated_sha256(sha256)
+        parameters = (normalized, exclude_session_id, exclude_session_id)
+        with self._lock:
+            self._ensure_open()
+            rows = self.conn.execute("""
+                SELECT s.*,
+                  (SELECT COUNT(*) FROM function_traces ft WHERE ft.session_id=s.id)
+                    AS function_count,
+                  (SELECT COUNT(*) FROM function_traces ft
+                    WHERE ft.session_id=s.id AND ft.ai_analysis_json IS NOT NULL)
+                    AS ai_function_count,
+                  (SELECT COUNT(*) FROM function_traces ft
+                    WHERE ft.session_id=s.id AND ft.risk_level='CRITICAL')
+                    AS critical_count,
+                  (SELECT COUNT(*) FROM function_traces ft
+                    WHERE ft.session_id=s.id AND ft.risk_level='HIGH')
+                    AS high_count,
+                  (SELECT COUNT(*) FROM function_traces ft
+                    WHERE ft.session_id=s.id AND ft.risk_level='MEDIUM')
+                    AS medium_count,
+                  (SELECT COUNT(*) FROM function_traces ft
+                    WHERE ft.session_id=s.id AND ft.risk_level='LOW')
+                    AS low_count,
+                  (SELECT COUNT(*) FROM api_calls a WHERE a.session_id=s.id)
+                    AS api_call_count,
+                  (SELECT COUNT(*) FROM network_events n WHERE n.session_id=s.id)
+                    AS network_event_count,
+                  (SELECT COUNT(*) FROM runtime_events r WHERE r.session_id=s.id)
+                    AS runtime_event_count,
+                  (SELECT COUNT(*) FROM detected_patterns p WHERE p.session_id=s.id)
+                    AS pattern_count
+                FROM sessions s
+                WHERE lower(s.sha256)=?
+                  AND (? IS NULL OR s.id != ?)
+                ORDER BY s.created_at DESC, s.id DESC
+            """, parameters).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_function_history_by_sha256(
+        self,
+        sha256: str,
+        *,
+        exclude_session_id: int | None = None,
+        limit: int = 300,
+    ) -> list:
+        """Return bounded function findings from prior sessions for the History tab."""
+        normalized = self._validated_sha256(sha256)
+        bounded_limit = self._bounded_int(limit, 1, 2_000, 300)
+        parameters = (
+            normalized,
+            exclude_session_id,
+            exclude_session_id,
+            bounded_limit,
+        )
+        with self._lock:
+            self._ensure_open()
+            rows = self.conn.execute("""
+                SELECT ft.session_id, ft.address, ft.name, ft.risk_level,
+                       ft.mitre_technique, ft.ai_analysis_json, ft.analyzed_at
+                FROM function_traces ft
+                JOIN sessions s ON s.id=ft.session_id
+                WHERE lower(s.sha256)=?
+                  AND (? IS NULL OR s.id != ?)
+                ORDER BY s.created_at DESC, s.id DESC, ft.address
+                LIMIT ?
+            """, parameters).fetchall()
+            return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
     # Function traces

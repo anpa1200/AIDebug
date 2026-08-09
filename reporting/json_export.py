@@ -116,6 +116,7 @@ class JSONExporter:
                 "address_int":     address,
                 "name":            self._text(ai.get("suggested_name") or trace.get("name")),
                 "instruction_count": instruction_count,
+                "disassembly":      self._text(trace.get("disassembly")),
                 # Older TraceStore rows do not record byte size.  Do not
                 # mislabel instruction count as a byte measurement.
                 "size_bytes":      size_bytes,
@@ -162,6 +163,7 @@ class JSONExporter:
 
                 # Timestamps
                 "analyzed_at": self._text(trace.get("analyzed_at")),
+                "analysis_cache_key": self._text(trace.get("analysis_cache_key")),
             }
             functions.append(func)
 
@@ -239,6 +241,10 @@ class JSONExporter:
             "session": {
                 "id":          self._json_safe(session.get("id")),
                 "created_at":  self._text(session.get("created_at")),
+                "completed_at": self._text(session.get("completed_at")),
+                "mode": self._text(session.get("analysis_mode")),
+                "analyzer": self._text(session.get("analyzer")),
+                "status": self._text(session.get("status")),
             },
 
             # High-level summary — ideal for SIEM dashboard fields

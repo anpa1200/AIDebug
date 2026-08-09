@@ -133,7 +133,7 @@ The target executes, so use a disposable, network-controlled VM.
 
 ## 5. Learning Mode
 
-Open the 47 bundled real-function lessons in AIDebug's original full-screen
+Open the 53 bundled real-function lessons in AIDebug's original full-screen
 GUI. A search topic filters the left catalog without compiling an artifact:
 
 ```bash
@@ -149,6 +149,7 @@ pseudo-code through Ghidra. An exact command preselects and opens that lesson:
 aidebug --learn subtract
 aidebug --learn switch-dispatch
 aidebug --learn movsxd
+aidebug --learn binary-search
 ```
 
 Add `--no-tui` to list lessons or print one analyzed lesson without opening the

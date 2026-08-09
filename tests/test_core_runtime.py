@@ -389,7 +389,7 @@ def test_trace_store_foreign_keys_upserts_cross_session_cache_and_events(tmp_pat
     db_path = tmp_path / 'state' / 'traces.db'
     store = TraceStore(db_path)
     info = make_binary()
-    first_session = store.create_session(info)
+    first_session = store.create_session(info, mode='static', analyzer='Claude test')
     second_session = store.create_session(info)
     function = Function(0x1000, 'sub_00001000', [Instruction(0x1000, 'ret', '', b'\xc3')])
 
@@ -414,6 +414,31 @@ def test_trace_store_foreign_keys_upserts_cross_session_cache_and_events(tmp_pat
 
     store.save_runtime_event(first_session, {'event': 'transition', 'address': '0x1'})
     assert store.get_runtime_events(first_session)[0]['event_type'] == 'transition'
+    store.finish_session(first_session)
+
+    history = store.find_sessions_by_sha256(info.sha256, exclude_session_id=second_session)
+    assert len(history) == 1
+    assert history[0]['id'] == first_session
+    assert history[0]['analysis_mode'] == 'static'
+    assert history[0]['analyzer'] == 'Claude test'
+    assert history[0]['status'] == 'completed'
+    assert history[0]['completed_at']
+    assert history[0]['function_count'] == 1
+    assert history[0]['ai_function_count'] == 1
+    assert history[0]['high_count'] == 1
+    assert history[0]['runtime_event_count'] == 1
+
+    function_history = store.get_function_history_by_sha256(
+        info.sha256,
+        exclude_session_id=second_session,
+    )
+    assert function_history[0]['session_id'] == first_session
+    assert function_history[0]['name'] == 'updated'
+
+    with pytest.raises(ValueError, match='64 hexadecimal'):
+        store.find_sessions_by_sha256('not-a-hash')
+    with pytest.raises(ValueError, match='Session status'):
+        store.finish_session(second_session, 'unknown')
 
     with pytest.raises(sqlite3.IntegrityError):
         store.save_api_call(999_999, 'module', 'function', [], '')
@@ -457,8 +482,11 @@ def test_trace_store_migrates_v1_database(tmp_path):
     assert {
         'decompiled_code', 'decompile_language', 'decompile_backend', 'decompile_warning'
     } <= columns
-    assert {'file_format', 'analysis_origin', 'compiled_sha256'} <= session_columns
-    assert version == 6
+    assert {
+        'file_format', 'analysis_origin', 'compiled_sha256', 'analysis_mode',
+        'analyzer', 'status', 'completed_at',
+    } <= session_columns
+    assert version == 7
     assert runtime_table is not None
 
 

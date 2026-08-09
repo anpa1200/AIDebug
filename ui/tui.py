@@ -5,6 +5,7 @@ Bottom bar: chat input for follow-up questions to the AI.
 """
 from __future__ import annotations
 
+import json
 import threading
 
 from rich.markup import escape
@@ -211,6 +212,7 @@ Screen {
     BINDINGS = [
         Binding("q",        "quit",         "Quit",           show=True),
         Binding("ctrl+a",   "analyze_all",  "Analyze All",    show=True),
+        Binding("ctrl+h",   "show_history", "History",        show=True),
         Binding("ctrl+f",   "focus_chat",   "Follow-up",       show=True),
         Binding("escape",   "blur_chat",    "Unfocus Chat",   show=False),
     ]
@@ -226,7 +228,8 @@ Screen {
     def __init__(self, binary_info, disassembler, ai_analyzer, trace_store,
                  session_id: int, function_addresses: list, *,
                  allow_bulk_analysis: bool = False,
-                 max_bulk_functions: int = 25):
+                 max_bulk_functions: int = 25,
+                 prior_sessions: list | None = None):
         super().__init__()
         self.binary_info        = binary_info
         self.disassembler       = disassembler
@@ -241,6 +244,15 @@ Screen {
         self._allow_bulk_analysis = allow_bulk_analysis
         self._max_bulk_functions = max(1, max_bulk_functions)
         self._startup_warnings: list[str] = []
+        self._cached_count = 0
+        if prior_sessions is None:
+            finder = getattr(self.trace_store, "find_sessions_by_sha256", None)
+            if callable(finder):
+                prior_sessions = finder(
+                    self.binary_info.sha256,
+                    exclude_session_id=self.session_id,
+                )
+        self.prior_sessions = list(prior_sessions or [])
 
     # ------------------------------------------------------------------
     # Layout
@@ -258,6 +270,7 @@ Screen {
             f" {_display_text(info.filename, 240)}  |  {_display_text(info.file_format, 40)} "
             f"{_display_text(info.arch, 40)} {info.bits}-bit  "
             f"|  {len(self.function_addresses)} functions  |  SHA256: {info.sha256[:12]}... "
+            f"|  history: {len(self.prior_sessions)} prior session(s) "
             f"|  {_display_text(analyzer_mode, 160)}"
         )
         yield Static(toolbar_text, id="toolbar")
@@ -287,6 +300,8 @@ Screen {
                         yield RichLog(id="patterns-log", highlight=True, markup=True)
                     with TabPane("Decompiled C", id="tab-decompile"):
                         yield RichLog(id="decompile-log", highlight=True, markup=True)
+                    with TabPane("History", id="tab-history"):
+                        yield RichLog(id="history-log", highlight=True, markup=True)
 
         # Bottom — chat bar
         with Horizontal(id="chat-bar"):
@@ -313,8 +328,14 @@ Screen {
 
     def on_mount(self) -> None:
         self._populate_function_table()
+        self._render_history()
         if self._startup_warnings:
             self._set_status(self._startup_warnings[0])
+        elif self.prior_sessions:
+            self._set_status(
+                f"Found {len(self.prior_sessions)} prior session(s); restored "
+                f"{self._cached_count} compatible function analyses."
+            )
         else:
             self._set_status(f"Loaded {len(self.function_addresses)} functions — select one to analyze.")
 
@@ -334,6 +355,7 @@ Screen {
             )
             if cached:
                 self._analyses[addr] = cached
+                self._cached_count += 1
                 try:
                     self.trace_store.save_function_analysis(self.session_id, func, cached)
                     self.trace_store.save_patterns(
@@ -361,6 +383,89 @@ Screen {
                 str(len(func.instructions)),
                 key=str(addr),
             )
+
+    def _render_history(self) -> None:
+        log: RichLog = self.query_one("#history-log")
+        log.clear()
+        log.write(
+            f"[bold cyan]SHA-256 analysis history[/bold cyan]\n"
+            f"[dim]{_markup_text(self.binary_info.sha256, 128)}[/dim]\n"
+        )
+        if not self.prior_sessions:
+            log.write(
+                "[dim]No previous sessions were found for this exact file hash. "
+                "Results from this run will be retained in the local SQLite database.[/dim]"
+            )
+            return
+
+        log.write(
+            f"[bold green]{len(self.prior_sessions)} previous session(s) found[/bold green]\n"
+            f"[dim]Database: {_markup_text(getattr(self.trace_store, 'db_path', ''), 8_192)}[/dim]\n"
+        )
+        for session in self.prior_sessions:
+            session_id = session.get("id", "?")
+            status = _markup_text(session.get("status") or "legacy", 32)
+            mode = _markup_text(session.get("analysis_mode") or "unknown", 32)
+            created = _markup_text(session.get("created_at") or "unknown", 64)
+            analyzer = _markup_text(session.get("analyzer") or "unknown", 160)
+            log.write(
+                f"[bold]Session {session_id}[/bold]  [{status}]  {mode}  [dim]{created}[/dim]"
+            )
+            log.write(f"  Analyzer: {analyzer}")
+            log.write(
+                f"  Evidence: {session.get('function_count', 0)} functions; "
+                f"{session.get('pattern_count', 0)} patterns; "
+                f"{session.get('api_call_count', 0)} API calls; "
+                f"{session.get('network_event_count', 0)} network events; "
+                f"{session.get('runtime_event_count', 0)} runtime events"
+            )
+            log.write(
+                f"  Risk: CRITICAL={session.get('critical_count', 0)} "
+                f"HIGH={session.get('high_count', 0)} "
+                f"MEDIUM={session.get('medium_count', 0)} "
+                f"LOW={session.get('low_count', 0)}"
+            )
+            log.write(
+                f"  [cyan]Full export:[/cyan] aidebug --session {session_id} "
+                "--json-export --out-dir reports/\n"
+            )
+
+        history_reader = getattr(
+            self.trace_store,
+            "get_function_history_by_sha256",
+            None,
+        )
+        findings = []
+        if callable(history_reader):
+            findings = history_reader(
+                self.binary_info.sha256,
+                exclude_session_id=self.session_id,
+                limit=300,
+            )
+        if not findings:
+            return
+        log.write("[bold cyan]Previous function findings[/bold cyan]")
+        for finding in findings:
+            try:
+                ai = json.loads(finding.get("ai_analysis_json") or "{}")
+            except (json.JSONDecodeError, TypeError, ValueError):
+                ai = {}
+            if not isinstance(ai, dict):
+                ai = {}
+            try:
+                address = f"0x{int(finding.get('address', 0)):x}"
+            except (TypeError, ValueError, OverflowError):
+                address = "unknown"
+            name = ai.get("suggested_name") or finding.get("name") or "unknown"
+            risk = finding.get("risk_level") or ai.get("risk_level") or "UNKNOWN"
+            summary = ai.get("summary") or "No stored summary"
+            log.write(
+                f"  [dim]session {finding.get('session_id', '?')}[/dim] "
+                f"{_markup_text(address, 32)} "
+                f"[bold]{_markup_text(risk, 20)}[/bold] "
+                f"{_markup_text(name, 120)}"
+            )
+            log.write(f"    {_markup_text(summary, 500)}")
 
     # ------------------------------------------------------------------
     # Function selection
@@ -736,6 +841,12 @@ Screen {
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
+
+    def action_show_history(self):
+        self.query_one("#right-tabs", TabbedContent).active = "tab-history"
+        self._set_status(
+            f"Showing {len(self.prior_sessions)} prior session(s) for this SHA-256."
+        )
 
     def action_analyze_all(self):
         """Queue AI analysis for all functions not yet analyzed."""

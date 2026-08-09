@@ -6,9 +6,9 @@ import pytest
 from learning import LiveLearningAnalyzer, catalog, find_lessons, get_lesson
 
 
-def test_learning_catalog_has_at_least_thirty_complete_unique_lessons():
+def test_learning_catalog_has_at_least_fifty_complete_unique_lessons():
     lessons = catalog()
-    assert len(lessons) >= 30
+    assert len(lessons) >= 50
     assert len({lesson.lesson_id for lesson in lessons}) == len(lessons)
     for lesson in lessons:
         assert lesson.title
@@ -96,3 +96,40 @@ def test_dedicated_data_movement_files_emit_their_real_instruction_families():
         result = analyzer.analyze(get_lesson(lesson_id))
         assert result.source_file == f"learning/cases/{lesson_id}.c"
         assert mnemonic in result.assembly.lower()
+
+
+@pytest.mark.skipif(not any(shutil.which(name) for name in ("cc", "gcc", "clang")), reason="no C compiler")
+@pytest.mark.parametrize(
+    "lesson_id",
+    (
+        "negate",
+        "test-bit",
+        "rotate-right",
+        "do-while",
+        "binary-search",
+        "reverse-buffer",
+    ),
+)
+def test_expanded_learning_cases_compile_to_real_disassembly(lesson_id):
+    class FakeDecompiler:
+        def __init__(self, info, executable=None):
+            assert info.raw_data.startswith(b"\x7fELF")
+
+        def decompile(self, addresses):
+            address = addresses[0]
+            return {
+                address: SimpleNamespace(
+                    code="void reconstructed_from_machine_code(void) {}",
+                    backend="test-ghidra",
+                    warning="test reconstruction",
+                )
+            }
+
+    result = LiveLearningAnalyzer(decompiler_factory=FakeDecompiler).analyze(
+        get_lesson(lesson_id)
+    )
+
+    assert result.source_file == f"learning/cases/{lesson_id}.c"
+    assert result.lesson.function_name in result.source
+    assert result.assembly.strip()
+    assert "0x" in result.assembly

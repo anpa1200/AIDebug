@@ -1,4 +1,4 @@
-.TH AIDEBUG 1 "August 2026" "aidebug 1.3.3" "User Commands"
+.TH AIDEBUG 1 "August 2026" "aidebug 1.3.4" "User Commands"
 .SH NAME
 aidebug \- AI-assisted malware reverse-engineering debugger
 .SH SYNOPSIS
@@ -51,7 +51,7 @@ Run a non-interactive active-debug command. Repeatable.
 Use PATH as the GDB executable for active debug mode.
 .TP
 .BR \-\-learn " " [TOPIC]
-Open 47 real learning cases in the full-screen GUI. Every lesson has its own
+Open 53 real learning cases in the full-screen GUI. Every lesson has its own
 source file. Selecting a lesson compiles only that trusted C file into a
 temporary, non-executed ELF, displays the complete real assembly and exact
 source, and reconstructs pseudo-code with Ghidra. Add
@@ -85,6 +85,10 @@ analysis. This flag is not authorization to send evidence off host.
 .TP
 .B \-\-list-sessions
 List stored analysis sessions.
+.TP
+.BR \-\-history " " FILE_OR_SHA256
+Find every local session for an existing file or complete SHA-256 and print
+stored AI function findings plus full-export commands.
 .TP
 .BR \-\-session " " ID
 Select a stored session for report, YARA, or JSON generation.

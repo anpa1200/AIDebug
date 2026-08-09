@@ -8,12 +8,15 @@ Usage:
     python main.py --source <path.c> --offline         # compile to temporary ELF + analyze
     python main.py --binary <path> --pid 1234         # dynamic mode (attach Frida)
     python main.py --list-sessions                    # show past analysis sessions
+    python main.py --history <file-or-sha256>         # show prior hash-matched analyses
     python main.py --session 1 --report               # HTML report for session 1
     python main.py --session 1 --yara                 # YARA rules for session 1
     python main.py --session 1 --json-export          # JSON export for session 1
     python main.py --session 1 --report --yara --json-export  # all three at once
 """
 import argparse
+import hashlib
+import json
 import os
 import re
 import sys
@@ -801,6 +804,7 @@ def run_tui(
     *,
     allow_bulk_analysis=False,
     max_bulk_functions=25,
+    prior_sessions=None,
 ):
     from ui import AIDebugApp
 
@@ -813,6 +817,7 @@ def run_tui(
         function_addresses=addresses,
         allow_bulk_analysis=allow_bulk_analysis,
         max_bulk_functions=max_bulk_functions,
+        prior_sessions=prior_sessions,
     )
     app.run()
 
@@ -826,14 +831,129 @@ def list_sessions(store):
     if not sessions:
         print("No analysis sessions found.")
         return
-    print(f"\n{'ID':>4}  {'File':<30}  {'Arch':<10}  {'Created'}")
-    print("-" * 70)
+    print(f"\n{'ID':>4}  {'File':<26}  {'Arch':<10}  {'Status':<11}  {'Created'}")
+    print("-" * 86)
     for s in sessions:
         session_id = s.get("id", "?")
-        filename = _terminal_text(s.get("filename", ""), 30)
+        filename = _terminal_text(s.get("filename", ""), 26)
         arch = _terminal_text(s.get("arch", ""), 10)
+        status = _terminal_text(s.get("status") or "legacy", 11)
         created_at = _terminal_text(s.get("created_at", ""), 30)
-        print(f"{str(session_id):>4}  {filename:<30}  {arch:<10}  {created_at}")
+        print(
+            f"{str(session_id):>4}  {filename:<26}  {arch:<10}  "
+            f"{status:<11}  {created_at}"
+        )
+
+
+def _history_sha256(value: str) -> str:
+    """Resolve an existing file or a literal SHA-256 into a normalized hash."""
+    candidate = Path(value).expanduser()
+    if candidate.exists():
+        if not candidate.is_file():
+            raise CLIError(f"history target is not a regular file: {_terminal_text(value)}")
+        if not os.access(candidate, os.R_OK):
+            raise CLIError(f"history target is not readable: {_terminal_text(value)}")
+        digest = hashlib.sha256()
+        try:
+            with candidate.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError as exc:
+            raise CLIError(f"could not hash history target: {exc}") from exc
+        return digest.hexdigest()
+
+    normalized = str(value).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", normalized):
+        raise CLIError("--history requires an existing file or a full 64-character SHA-256")
+    return normalized
+
+
+def _stored_analysis_data(trace: dict) -> dict:
+    try:
+        value = json.loads(trace.get("ai_analysis_json") or "{}")
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def show_hash_history(store, value: str) -> list:
+    """Print persisted sessions and AI findings for a sample path or SHA-256."""
+    sha256 = _history_sha256(value)
+    sessions = store.find_sessions_by_sha256(sha256)
+    print(f"[*] Analysis history for SHA-256: {sha256}")
+    print(f"[*] Local database: {_terminal_text(store.db_path, 8_192)}")
+    if not sessions:
+        print("No previous analysis sessions found for this hash.")
+        return []
+
+    print(f"[+] Found {len(sessions)} previous analysis session(s).")
+    for session in sessions:
+        session_id = session.get("id", "?")
+        status = _terminal_text(session.get("status") or "legacy", 32)
+        mode = _terminal_text(session.get("analysis_mode") or "unknown", 32)
+        analyzer = _terminal_text(session.get("analyzer") or "unknown", 80)
+        created = _terminal_text(session.get("created_at") or "unknown", 40)
+        completed = _terminal_text(session.get("completed_at") or "not recorded", 40)
+        print(
+            f"\nSession {session_id}  |  {status}  |  {mode}  |  {created}"
+            f"\n  Analyzer: {analyzer}"
+            f"\n  Completed: {completed}"
+            f"\n  Stored evidence: {session.get('function_count', 0)} functions, "
+            f"{session.get('pattern_count', 0)} patterns, "
+            f"{session.get('api_call_count', 0)} API calls, "
+            f"{session.get('network_event_count', 0)} network events, "
+            f"{session.get('runtime_event_count', 0)} runtime events"
+            f"\n  Risk: CRITICAL={session.get('critical_count', 0)} "
+            f"HIGH={session.get('high_count', 0)} "
+            f"MEDIUM={session.get('medium_count', 0)} "
+            f"LOW={session.get('low_count', 0)}"
+        )
+        traces = store.get_all_traces(int(session_id))
+        for trace in traces:
+            ai = _stored_analysis_data(trace)
+            address = trace.get("address", 0)
+            try:
+                address_text = f"0x{int(address):x}"
+            except (TypeError, ValueError, OverflowError):
+                address_text = "unknown"
+            name = _terminal_text(
+                ai.get("suggested_name") or trace.get("name") or "unknown",
+                100,
+            )
+            risk = _terminal_text(trace.get("risk_level") or "UNKNOWN", 20)
+            summary = _terminal_text(ai.get("summary") or "No stored summary", 240)
+            mitre = _terminal_text(
+                ai.get("mitre_technique") or trace.get("mitre_technique") or "",
+                100,
+            )
+            suffix = f" | {mitre}" if mitre else ""
+            print(f"    {address_text:<18} [{risk:<8}] {name}{suffix}")
+            print(f"      {summary}")
+        print(
+            f"  Export every stored field: aidebug --session {session_id} "
+            "--json-export --out-dir reports/"
+        )
+    return sessions
+
+
+def print_prior_analysis_notice(store, sha256: str, sessions: list) -> None:
+    """Explain automatic hash recovery when a known sample is opened again."""
+    if not sessions:
+        return
+    latest = sessions[0]
+    print(
+        f"[+] Recognized SHA-256 {sha256}: {len(sessions)} prior session(s) found "
+        f"in {_terminal_text(store.db_path, 8_192)}."
+    )
+    print(
+        f"[*] Latest prior session: {latest.get('id')} "
+        f"({latest.get('created_at') or 'unknown date'}, "
+        f"{latest.get('ai_function_count', 0)} stored function analyses)."
+    )
+    print(
+        "[*] Compatible function results will be restored automatically. "
+        "Open the History tab or run aidebug --history <file-or-sha256>."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1001,6 +1121,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="ELF-capable compiler used for --learn (default: cc, gcc, or clang)",
     )
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
+    parser.add_argument(
+        "--history",
+        metavar="FILE_OR_SHA256",
+        help="Show all persisted analysis sessions matching a file or SHA-256",
+    )
     parser.add_argument("--session",        type=_positive_int, help="Session ID for reporting commands")
     parser.add_argument("--report",         action="store_true", help="Generate HTML report")
     parser.add_argument(
@@ -1049,6 +1174,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     ghidra_headless = getattr(args, "ghidra_headless", None)
     learn = getattr(args, "learn", None)
     learning_compiler = getattr(args, "learning_compiler", None)
+    history = getattr(args, "history", None)
     debug_options = bool(
         getattr(args, "breakpoint", [])
         or getattr(args, "debug_arg", [])
@@ -1070,6 +1196,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or args.db != config.DB_PATH
             or decompile
             or decompile_all
+            or history
             or debug_options
         )
         if conflicting:
@@ -1086,6 +1213,28 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             f"--max-functions cannot exceed the discovery limit "
             f"({config.MAX_FUNCTIONS_TO_DISCOVER})"
         )
+
+    if history:
+        conflicting = (
+            selected_input
+            or args.list_sessions
+            or args.session
+            or wants_report
+            or args.mode != "static"
+            or args.pid
+            or args.frida_host
+            or args.no_tui
+            or args.offline
+            or args.accept_ai_cost
+            or args.out_dir != "."
+            or decompile
+            or decompile_all
+            or ghidra_headless
+            or debug_options
+        )
+        if conflicting:
+            parser.error("--history cannot be combined with analysis, debug, or reporting options")
+        return
 
     if args.list_sessions:
         conflicting = (
@@ -1143,7 +1292,10 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         parser.error("--accept-ai-cost has no effect without file analysis or --yara")
 
     if not selected_input and not wants_report:
-        parser.error("choose --binary, --source, --learn, --list-sessions, or a reporting command")
+        parser.error(
+            "choose --binary, --source, --learn, --history, --list-sessions, "
+            "or a reporting command"
+        )
 
     if selected_input:
         input_kind = "source" if args.source else "binary"
@@ -1182,6 +1334,8 @@ def _execute(args) -> int:
     from storage import TraceStore
 
     store = None
+    active_session_id = None
+    session_finished = False
     try:
         if getattr(args, "learn", None) is not None:
             runner = run_learning if args.no_tui else run_learning_tui
@@ -1251,6 +1405,10 @@ def _execute(args) -> int:
 
         store = TraceStore(args.db)
 
+        if getattr(args, "history", None):
+            show_hash_history(store, args.history)
+            return 0
+
         if args.list_sessions:
             list_sessions(store)
             return 0
@@ -1280,8 +1438,16 @@ def _execute(args) -> int:
         if analyzer is None or prepared_binary is None:
             raise CLIError("File analysis was not initialized")
         binary_info, disassembler, addresses = prepared_binary
-        session_id = store.create_session(binary_info)
+        prior_sessions = store.find_sessions_by_sha256(binary_info.sha256)
+        analyzer_name = getattr(analyzer, "display_name", analyzer.__class__.__name__)
+        session_id = store.create_session(
+            binary_info,
+            mode=args.mode,
+            analyzer=analyzer_name,
+        )
+        active_session_id = session_id
         print(f"[*] Session ID: {session_id}")
+        print_prior_analysis_notice(store, binary_info.sha256, prior_sessions)
 
         completed = True
         if args.mode == "dynamic":
@@ -1327,7 +1493,11 @@ def _execute(args) -> int:
                 analyzer,
                 allow_bulk_analysis=args.offline or args.accept_ai_cost,
                 max_bulk_functions=args.max_functions,
+                prior_sessions=prior_sessions,
             )
+
+        store.finish_session(session_id, "completed" if completed else "failed")
+        session_finished = True
 
         if wants_report:
             print()
@@ -1344,6 +1514,18 @@ def _execute(args) -> int:
             completed = completed and reports_completed
 
         return 0 if completed else 1
+    except BaseException as exc:
+        if store is not None and active_session_id is not None and not session_finished:
+            status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+            try:
+                store.finish_session(active_session_id, status)
+            except Exception as finish_error:
+                print(
+                    "[!] Could not persist final session status: "
+                    f"{_terminal_text(finish_error)}",
+                    file=sys.stderr,
+                )
+        raise
     finally:
         if store is not None:
             store.close()
