@@ -43,11 +43,20 @@ is not accepted when any required gate fails.
 3. Create the GitHub release for that tag and use
    `docs/release-notes/vX.Y.Z.md` as the release body.
 4. The publish workflow rejects GitHub prereleases, verifies tag/version
-   consistency and that the release commit is on the default branch, repeats
-   the required checks, builds once, and publishes that tested artifact with
-   PyPI Trusted Publishing. Existing PyPI files are an error; they are never
-   silently skipped.
+   consistency and that the release commit is on the default branch, requires
+   a successful `secret-scan` check for that exact commit, repeats the required
+   checks, builds once, and publishes that tested artifact with PyPI Trusted
+   Publishing. Existing PyPI files are an error; they are never silently
+   skipped.
 5. Verify the PyPI provenance points to the intended tag and commit.
+
+If GitHub delivery or an external service interrupts publishing after the tag
+and release exist, retry the immutable tag from the default branch without
+moving or recreating it:
+
+```bash
+gh workflow run publish.yml --ref main -f release_tag=vX.Y.Z
+```
 
 ## Post-Release
 
