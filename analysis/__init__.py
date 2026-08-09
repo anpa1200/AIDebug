@@ -14,6 +14,7 @@ from .pe_structure import (
     PEExportRecord,
     PEHeader,
     PEHeaderField,
+    PEImportDescriptorRecord,
     PEImportRecord,
     PESectionRecord,
     PEStructure,
@@ -32,7 +33,8 @@ __all__ = [
     'CFGBuilder', 'CFGTextRenderer', 'CFGSVGRenderer', 'CFG',
     'PatternDetector', 'MalwarePattern', 'FlirtMatcher', 'FlirtMatch',
     'PEStructureAnalyzer', 'PEStructure', 'PEHeader', 'PEHeaderField',
-    'PEDataDirectory', 'PESectionRecord', 'PEImportRecord', 'PEExportRecord',
+    'PEDataDirectory', 'PESectionRecord', 'PEImportDescriptorRecord',
+    'PEImportRecord', 'PEExportRecord',
     'render_hex_page',
 ]
 

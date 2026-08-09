@@ -259,6 +259,19 @@ class PEImportRecord:
 
 
 @dataclass(frozen=True)
+class PEImportDescriptorRecord:
+    index: int
+    dll: str
+    file_offset: int
+    original_first_thunk: int
+    time_date_stamp: int
+    forwarder_chain: int
+    name_rva: int
+    first_thunk: int
+    is_zero_terminator: bool = False
+
+
+@dataclass(frozen=True)
 class PEExportRecord:
     name: str
     ordinal: int
@@ -284,7 +297,9 @@ class PEStructure:
     overlay_offset: int | None
     overlay_size: int
     raw_data: bytes = field(repr=False)
+    import_descriptors: tuple[PEImportDescriptorRecord, ...] = ()
     imports_truncated: bool = False
+    import_descriptors_truncated: bool = False
     exports_truncated: bool = False
 
 
@@ -337,6 +352,9 @@ class PEStructureAnalyzer:
                 )
             )
             sections = tuple(self._section(section) for section in pe.sections)
+            import_descriptors, import_descriptors_truncated = (
+                self._import_descriptors(pe, raw_data)
+            )
             imports, imports_truncated = self._imports(pe)
             exports, exports_truncated = self._exports(pe)
 
@@ -366,7 +384,9 @@ class PEStructureAnalyzer:
                 overlay_offset=overlay_offset,
                 overlay_size=overlay_size,
                 raw_data=raw_data,
+                import_descriptors=import_descriptors,
                 imports_truncated=imports_truncated,
+                import_descriptors_truncated=import_descriptors_truncated,
                 exports_truncated=exports_truncated,
             )
         finally:
@@ -452,6 +472,76 @@ class PEStructureAnalyzer:
         if isinstance(value, bytes):
             return value.decode("utf-8", errors="replace")
         return str(value)
+
+    def _import_descriptors(
+        self,
+        pe,
+        raw_data: bytes,
+    ) -> tuple[tuple[PEImportDescriptorRecord, ...], bool]:
+        entries = list(getattr(pe, "DIRECTORY_ENTRY_IMPORT", ()))
+        truncated = len(entries) > config.MAX_IMPORT_DESCRIPTORS
+        selected = entries[:config.MAX_IMPORT_DESCRIPTORS]
+        records = []
+        for index, entry in enumerate(selected):
+            descriptor = getattr(entry, "struct", None)
+            if descriptor is None:
+                continue
+            records.append(
+                PEImportDescriptorRecord(
+                    index=index,
+                    dll=self._decode(getattr(entry, "dll", None))
+                    or "<unknown DLL>",
+                    file_offset=int(descriptor.get_file_offset()),
+                    original_first_thunk=int(
+                        getattr(
+                            descriptor,
+                            "OriginalFirstThunk",
+                            getattr(descriptor, "Characteristics", 0),
+                        )
+                    ),
+                    time_date_stamp=int(getattr(descriptor, "TimeDateStamp", 0)),
+                    forwarder_chain=int(getattr(descriptor, "ForwarderChain", 0)),
+                    name_rva=int(getattr(descriptor, "Name", 0)),
+                    first_thunk=int(getattr(descriptor, "FirstThunk", 0)),
+                )
+            )
+
+        if not truncated:
+            terminator_offset = self._import_terminator_offset(pe, records)
+            if (
+                terminator_offset is not None
+                and 0 <= terminator_offset <= len(raw_data) - 20
+                and raw_data[terminator_offset:terminator_offset + 20] == bytes(20)
+            ):
+                records.append(
+                    PEImportDescriptorRecord(
+                        index=len(records),
+                        dll="<all-zero terminator>",
+                        file_offset=terminator_offset,
+                        original_first_thunk=0,
+                        time_date_stamp=0,
+                        forwarder_chain=0,
+                        name_rva=0,
+                        first_thunk=0,
+                        is_zero_terminator=True,
+                    )
+                )
+        return tuple(records), truncated
+
+    @staticmethod
+    def _import_terminator_offset(
+        pe,
+        records: list[PEImportDescriptorRecord],
+    ) -> int | None:
+        if records:
+            return records[-1].file_offset + 20
+        directories = getattr(pe.OPTIONAL_HEADER, "DATA_DIRECTORY", ())
+        if len(directories) <= 1 or int(directories[1].VirtualAddress) == 0:
+            return None
+        try:
+            return int(pe.get_offset_from_rva(int(directories[1].VirtualAddress)))
+        except (AttributeError, TypeError, ValueError, pefile.PEFormatError):
+            return None
 
     def _imports(self, pe) -> tuple[tuple[PEImportRecord, ...], bool]:
         records = []

@@ -117,10 +117,13 @@ set flag is decoded by name, including executable, DLL, system, relocation,
 ASLR, high-entropy VA, DEP/NX, CFG, integrity checks, AppContainer, and SEH.
 The Sections tab exposes every field in each 40-byte `IMAGE_SECTION_HEADER`,
 including relocation and line-number pointers/counts, and decodes content,
-linker, alignment, and memory-permission flags. Imports include normal and
-delay-loaded entries; exports include ordinals and forwarders. Overlay offset
-and size are reported when extra data follows the mapped image. `P` remains an
-additional shortcut for analysts accustomed to opening PE Structure directly.
+linker, alignment, and memory-permission flags. The Import descriptors tab
+shows every standard 20-byte `IMAGE_IMPORT_DESCRIPTOR`, including INT and IAT
+RVAs, timestamp, forwarder chain, DLL-name RVA, file offset, and confirmed
+all-zero terminator evidence. Imports include normal and delay-loaded function
+entries; exports include ordinals and forwarders. Overlay offset and size are
+reported when extra data follows the mapped image. `P` remains an additional
+shortcut for analysts accustomed to opening PE Structure directly.
 
 The Hex tab covers every byte of the exact file content AIDebug hashed. It uses
 4 KiB pages instead of creating one unbounded terminal document: use

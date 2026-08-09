@@ -87,7 +87,12 @@ PEStructureScreen {
     def __init__(self, structure: PEStructure):
         super().__init__()
         self.structure = structure
-        self._pages = {"pe-hex": 0, "pe-imports": 0, "pe-exports": 0}
+        self._pages = {
+            "pe-hex": 0,
+            "pe-import-descriptors": 0,
+            "pe-imports": 0,
+            "pe-exports": 0,
+        }
 
     def compose(self) -> ComposeResult:
         pe = self.structure
@@ -114,6 +119,13 @@ PEStructureScreen {
                     yield RichLog(id="pe-sections-log", classes="pe-log", markup=True, wrap=False)
                 with TabPane("Directories", id="pe-directories"):
                     yield RichLog(id="pe-directories-log", classes="pe-log", markup=True, wrap=False)
+                with TabPane("Import descriptors", id="pe-import-descriptors"):
+                    yield RichLog(
+                        id="pe-import-descriptors-log",
+                        classes="pe-log",
+                        markup=True,
+                        wrap=False,
+                    )
                 with TabPane("Imports", id="pe-imports"):
                     yield RichLog(id="pe-imports-log", classes="pe-log", markup=True, wrap=False)
                 with TabPane("Exports", id="pe-exports"):
@@ -127,6 +139,7 @@ PEStructureScreen {
         self._render_headers()
         self._render_sections()
         self._render_directories()
+        self._render_import_descriptors()
         self._render_imports()
         self._render_exports()
         self._update_status()
@@ -145,6 +158,7 @@ PEStructureScreen {
         log.write(f"Data directories  {len(pe.data_directories)}")
         log.write(f"Sections          {len(pe.sections)}")
         log.write(f"Imports           {len(pe.imports)}")
+        log.write(f"Import descriptors {len(pe.import_descriptors)}")
         log.write(f"Exports           {len(pe.exports)}")
         if pe.overlay_offset is None:
             log.write("Overlay           none detected")
@@ -298,6 +312,53 @@ PEStructureScreen {
                 "MAX_IMPORT_FUNCTIONS.[/yellow]"
             )
 
+    def _render_import_descriptors(self) -> None:
+        records = self.structure.import_descriptors
+        page = self._bounded_record_page("pe-import-descriptors", len(records))
+        start = page * self.RECORD_PAGE_SIZE
+        selected = records[start:start + self.RECORD_PAGE_SIZE]
+        total = page_count(len(records), self.RECORD_PAGE_SIZE)
+        log = self.query_one("#pe-import-descriptors-log", RichLog)
+        log.clear()
+        log.write(
+            f"[bold cyan]IMAGE_IMPORT_DESCRIPTOR records — page "
+            f"{page + 1}/{total}[/bold cyan]\n"
+            "[dim]Each descriptor is 20 bytes. Values are RVAs unless marked "
+            "as a file offset.[/dim]"
+        )
+        for descriptor in selected:
+            if descriptor.is_zero_terminator:
+                log.write(
+                    f"\n[bold green][{descriptor.index}] All-zero terminator[/bold green] "
+                    f"[dim]at file offset 0x{descriptor.file_offset:08x}[/dim]"
+                )
+            else:
+                log.write(
+                    f"\n[bold cyan][{descriptor.index}] "
+                    f"{_safe(descriptor.dll, 512)}[/bold cyan] "
+                    f"[dim]at file offset 0x{descriptor.file_offset:08x}[/dim]"
+                )
+            log.write(
+                "OriginalFirstThunk (INT)  "
+                f"0x{descriptor.original_first_thunk:08x}"
+            )
+            log.write(f"TimeDateStamp              0x{descriptor.time_date_stamp:08x}")
+            log.write(f"ForwarderChain             0x{descriptor.forwarder_chain:08x}")
+            log.write(f"Name                       0x{descriptor.name_rva:08x}")
+            log.write(f"FirstThunk (IAT)           0x{descriptor.first_thunk:08x}")
+        if not records:
+            log.write("[dim]No standard import descriptors were reported.[/dim]")
+        elif not any(item.is_zero_terminator for item in records):
+            log.write(
+                "\n[yellow]No all-zero terminator was confirmed within the analyzed "
+                "descriptor evidence.[/yellow]"
+            )
+        if self.structure.import_descriptors_truncated:
+            log.write(
+                f"[yellow]Display model limited to {len(records):,} descriptors by "
+                "MAX_IMPORT_DESCRIPTORS.[/yellow]"
+            )
+
     def _render_exports(self) -> None:
         records = self.structure.exports
         page = self._bounded_record_page("pe-exports", len(records))
@@ -339,6 +400,11 @@ PEStructureScreen {
     def _total_pages(self, tab: str) -> int:
         if tab == "pe-hex":
             return page_count(len(self.structure.raw_data), self.HEX_PAGE_SIZE)
+        if tab == "pe-import-descriptors":
+            return page_count(
+                len(self.structure.import_descriptors),
+                self.RECORD_PAGE_SIZE,
+            )
         if tab == "pe-imports":
             return page_count(len(self.structure.imports), self.RECORD_PAGE_SIZE)
         if tab == "pe-exports":
@@ -348,6 +414,8 @@ PEStructureScreen {
     def _render_active_page(self, tab: str) -> None:
         if tab == "pe-hex":
             self._render_hex()
+        elif tab == "pe-import-descriptors":
+            self._render_import_descriptors()
         elif tab == "pe-imports":
             self._render_imports()
         elif tab == "pe-exports":

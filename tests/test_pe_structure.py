@@ -9,6 +9,7 @@ from analysis.pe_structure import (
     PEExportRecord,
     PEHeader,
     PEHeaderField,
+    PEImportDescriptorRecord,
     PEImportRecord,
     PESectionRecord,
     PEStructure,
@@ -62,6 +63,18 @@ class FakeSection:
         return 0x188
 
 
+class FakeImportDescriptor:
+    OriginalFirstThunk = 0x3000
+    TimeDateStamp = 0x12345678
+    ForwarderChain = 0
+    Name = 0x3500
+    FirstThunk = 0x4000
+
+    @staticmethod
+    def get_file_offset():
+        return 0x200
+
+
 class FakePE:
     closed = False
 
@@ -98,7 +111,11 @@ class FakePE:
             name=None, ordinal=7, hint=None, address=0x140004008
         )
         self.DIRECTORY_ENTRY_IMPORT = [
-            SimpleNamespace(dll=b"KERNEL32.dll", imports=[imported])
+            SimpleNamespace(
+                dll=b"KERNEL32.dll",
+                imports=[imported],
+                struct=FakeImportDescriptor(),
+            )
         ]
         self.DIRECTORY_ENTRY_DELAY_IMPORT = [
             SimpleNamespace(dll=b"DELAY.dll", imports=[delayed])
@@ -197,6 +214,29 @@ def _model(raw_data=None):
         overlay_offset=None,
         overlay_size=0,
         raw_data=raw_data,
+        import_descriptors=(
+            PEImportDescriptorRecord(
+                0,
+                "KERNEL32.dll",
+                0x200,
+                0x3000,
+                0x12345678,
+                0,
+                0x3500,
+                0x4000,
+            ),
+            PEImportDescriptorRecord(
+                1,
+                "<all-zero terminator>",
+                0x214,
+                0,
+                0,
+                0,
+                0,
+                0,
+                True,
+            ),
+        ),
     )
 
 
@@ -233,6 +273,29 @@ def test_pe_structure_uses_analyzed_bytes_and_recovers_all_tables(monkeypatch):
         "IMAGE_SCN_CNT_CODE",
         "IMAGE_SCN_MEM_EXECUTE",
         "IMAGE_SCN_MEM_READ",
+    )
+    assert model.import_descriptors == (
+        PEImportDescriptorRecord(
+            0,
+            "KERNEL32.dll",
+            0x200,
+            0x3000,
+            0x12345678,
+            0,
+            0x3500,
+            0x4000,
+        ),
+        PEImportDescriptorRecord(
+            1,
+            "<all-zero terminator>",
+            0x214,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+        ),
     )
     assert [(item.kind, item.name) for item in model.imports] == [
         ("import", "CreateFileW"),
@@ -390,12 +453,26 @@ def test_pe_structure_screen_pages_whole_file():
             assert "IMAGE_SCN_MEM_EXECUTE" in sections
             assert "IMAGE_SCN_MEM_READ" in sections
             assert "Memory permissions            R-X" in sections
+            tabs.active = "pe-import-descriptors"
+            await pilot.pause()
+            descriptors = "\n".join(
+                line.text
+                for line in screen.query_one("#pe-import-descriptors-log").lines
+            )
+            assert "IMAGE_IMPORT_DESCRIPTOR records" in descriptors
+            assert "OriginalFirstThunk (INT)" in descriptors
+            assert "TimeDateStamp" in descriptors
+            assert "ForwarderChain" in descriptors
+            assert "Name" in descriptors
+            assert "FirstThunk (IAT)" in descriptors
+            assert "All-zero terminator" in descriptors
             assert {pane.id for pane in screen.query("TabbedContent TabPane")} == {
                 "pe-overview",
                 "pe-hex",
                 "pe-headers",
                 "pe-sections",
                 "pe-directories",
+                "pe-import-descriptors",
                 "pe-imports",
                 "pe-exports",
             }
