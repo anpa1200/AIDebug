@@ -15,6 +15,8 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, RichLog, Static, TabbedContent, TabPane, Tree
 
 from analysis.pe_structure import (
+    PEASLRAssessment,
+    PEBaseRelocationBlock,
     PEResourceDataRecord,
     PEResourceDirectoryRecord,
     PEStructure,
@@ -285,11 +287,15 @@ PEStructureScreen {
         self.structure = structure
         self._pages = {
             "pe-hex": 0,
+            "pe-base-relocations": 0,
             "pe-import-descriptors": 0,
             "pe-imports": 0,
             "pe-exports": 0,
         }
         self._resource_nodes = {}
+        self._relocation_nodes = {}
+        self._relocation_root = None
+        self._selected_relocation_block = None
 
     def compose(self) -> ComposeResult:
         pe = self.structure
@@ -314,9 +320,9 @@ PEStructureScreen {
                     yield RichLog(id="pe-headers-log", classes="pe-log", markup=True, wrap=False)
                 with TabPane("Sections", id="pe-sections"):
                     yield RichLog(id="pe-sections-log", classes="pe-log", markup=True, wrap=False)
-                with TabPane("Resources", id="pe-directories"):
+                with TabPane("Directories", id="pe-directories"):
                     with Horizontal(id="pe-resource-workspace"):
-                        yield Tree("PE resources", id="pe-resource-tree")
+                        yield Tree("PE data directories", id="pe-resource-tree")
                         yield RichLog(
                             id="pe-directories-log",
                             classes="pe-log",
@@ -371,6 +377,7 @@ PEStructureScreen {
         log.write(f"Headers           {len(pe.headers)} groups")
         log.write(f"Data directories  {len(pe.data_directories)}")
         log.write(f"Resource records  {len(pe.resources)}")
+        log.write(f"Relocation blocks {len(pe.base_relocations)}")
         log.write(f"Sections          {len(pe.sections)}")
         log.write(f"Imports           {len(pe.imports)}")
         log.write(f"Import descriptors {len(pe.import_descriptors)}")
@@ -493,13 +500,14 @@ PEStructureScreen {
 
     def _populate_resource_tree(self) -> None:
         tree = self.query_one("#pe-resource-tree", Tree)
-        tree.root.set_label("PE resources")
+        tree.root.set_label("PE data directories")
         tree.root.expand()
-        self._resource_nodes = {("<root>",): tree.root}
+        resource_root = tree.root.add("Resources", expand=True)
+        self._resource_nodes = {("<root>",): resource_root}
         for record in self.structure.resources:
             if isinstance(record, PEResourceDirectoryRecord):
                 if record.path == ("<root>",):
-                    tree.root.data = record
+                    resource_root.data = record
                     continue
                 parent = self._resource_nodes.get(record.path[:-1], tree.root)
                 node = parent.add(record.path[-1], data=record, expand=True)
@@ -514,11 +522,33 @@ PEStructureScreen {
             )
             self._resource_nodes[record.path + ("<data>",)] = file_node
         if not self.structure.resources:
-            tree.root.add("No resource hierarchy reported", allow_expand=False)
+            resource_root.add("No resource hierarchy reported", allow_expand=False)
+        relocation_root = tree.root.add(
+            "Base relocations & ASLR",
+            data=self.structure.aslr,
+            expand=True,
+        )
+        self._relocation_root = relocation_root
+        self._relocation_nodes = {}
+        for block in self.structure.base_relocations:
+            self._relocation_nodes[block.index] = relocation_root.add(
+                f"Block {block.index}: page RVA 0x{block.virtual_address:08x} "
+                f"({len(block.entries):,} entries)",
+                data=block,
+                allow_expand=False,
+            )
+        if not self.structure.base_relocations:
+            relocation_root.add("No parsed relocation blocks", allow_expand=False)
 
     def _render_resource_record(
         self,
-        record: PEResourceDirectoryRecord | PEResourceDataRecord | None,
+        record: (
+            PEResourceDirectoryRecord
+            | PEResourceDataRecord
+            | PEBaseRelocationBlock
+            | PEASLRAssessment
+            | None
+        ),
     ) -> None:
         log = self.query_one("#pe-directories-log", RichLog)
         log.clear()
@@ -532,10 +562,11 @@ PEStructureScreen {
         if not self.structure.data_directories:
             log.write("[dim]No data directories were reported.[/dim]")
         log.write(
-            "\n[bold cyan]Resource explorer[/bold cyan]\n"
-            "[dim]Conventional path: type → name/ID → language → data file. "
+            "\n[bold cyan]PE data-directory explorer[/bold cyan]\n"
+            "[dim]Resources use type → name/ID → language → data file. "
             "Select a file and press Enter to open it safely inside AIDebug; "
-            "press D to download/export the exact bytes.[/dim]"
+            "press D to download/export the exact bytes. Select a relocation "
+            "block to inspect its entries.[/dim]"
         )
         if record is None:
             if not self.structure.resources:
@@ -546,8 +577,54 @@ PEStructureScreen {
                     for item in self.structure.resources
                 )
                 log.write(
-                    f"\n{data_count:,} resource files found. Use the explorer "
-                    "on the left to inspect one."
+                    f"\n{data_count:,} resource files and "
+                    f"{len(self.structure.base_relocations):,} relocation blocks "
+                    "found. Use the explorer on the left to inspect one."
+                )
+            if self.structure.aslr is not None:
+                log.write(f"\n[bold cyan]ASLR[/bold cyan]  {self.structure.aslr.status}")
+        elif isinstance(record, PEASLRAssessment):
+            log.write(f"\n[bold cyan]ASLR assessment[/bold cyan]\n{_safe(record.status)}")
+            log.write(f"DYNAMIC_BASE             {'set' if record.dynamic_base else 'not set'}")
+            log.write(
+                f"HIGH_ENTROPY_VA           {'set' if record.high_entropy_va else 'not set'}"
+            )
+            log.write(
+                f"RELOCS_STRIPPED           {'set' if record.relocations_stripped else 'not set'}"
+            )
+            log.write(f"Relocation directory RVA 0x{record.directory_rva:08x}")
+            log.write(f"Relocation directory size 0x{record.directory_size:08x}")
+            log.write(f"Parsed blocks            {record.parsed_blocks:,}")
+            log.write(f"Parsed entries           {record.parsed_entries:,}")
+            log.write(f"Usable entries           {record.usable_entries:,}")
+            log.write("\n[bold cyan]Assessment clues[/bold cyan]")
+            for clue in record.clues:
+                log.write(f"[cyan]• {_safe(clue, 512)}[/cyan]")
+        elif isinstance(record, PEBaseRelocationBlock):
+            page = self._bounded_record_page(
+                "pe-base-relocations",
+                len(record.entries),
+            )
+            start = page * self.RECORD_PAGE_SIZE
+            selected = record.entries[start:start + self.RECORD_PAGE_SIZE]
+            total = page_count(len(record.entries), self.RECORD_PAGE_SIZE)
+            log.write(
+                f"\n[bold cyan]IMAGE_BASE_RELOCATION block {record.index} — "
+                f"page {page + 1}/{total}[/bold cyan]"
+            )
+            log.write(f"Header file offset       0x{record.file_offset:08x}")
+            log.write(f"VirtualAddress (page RVA) 0x{record.virtual_address:08x}")
+            log.write(f"SizeOfBlock              0x{record.size_of_block:08x}")
+            log.write(f"Entries                  {len(record.entries):,}")
+            log.write(
+                "\nIndex  File offset  Type  Offset  Target RVA  Target VA          Type name"
+            )
+            for entry in selected:
+                log.write(
+                    f"{entry.index:>5}  0x{entry.file_offset:08x}  "
+                    f"{entry.type:>4}  0x{entry.offset:03x}  "
+                    f"0x{entry.rva:08x} 0x{entry.address:016x}  "
+                    f"{_safe(entry.type_name, 96)}"
                 )
         elif isinstance(record, PEResourceDirectoryRecord):
             path = " → ".join(_safe(part, 256) for part in record.path)
@@ -598,14 +675,33 @@ PEStructureScreen {
                 "\n[yellow]Resource traversal was limited by the configured "
                 "record/depth safety bounds or malformed cyclic evidence.[/yellow]"
             )
+        if self.structure.base_relocations_truncated:
+            log.write(
+                "\n[yellow]Base-relocation parsing reached its configured block "
+                "or entry safety limit; displayed counts are partial.[/yellow]"
+            )
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         if event.control.id != "pe-resource-tree":
             return
         record = event.node.data
-        if isinstance(record, (PEResourceDirectoryRecord, PEResourceDataRecord)):
+        if isinstance(
+            record,
+            (
+                PEResourceDirectoryRecord,
+                PEResourceDataRecord,
+                PEBaseRelocationBlock,
+                PEASLRAssessment,
+            ),
+        ):
+            if isinstance(record, PEBaseRelocationBlock):
+                self._pages["pe-base-relocations"] = 0
+                self._selected_relocation_block = record
+            else:
+                self._selected_relocation_block = None
             self._render_resource_record(record)
         else:
+            self._selected_relocation_block = None
             self._render_resource_record(None)
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
@@ -797,6 +893,8 @@ PEStructureScreen {
 
     def _active_paged_tab(self) -> str | None:
         active = self.query_one("#pe-tabs", TabbedContent).active
+        if active == "pe-directories" and self._selected_relocation_block is not None:
+            return "pe-base-relocations"
         return active if active in self._pages else None
 
     def _bounded_record_page(self, tab: str, count: int) -> int:
@@ -818,6 +916,13 @@ PEStructureScreen {
                 ),
                 self.RECORD_PAGE_SIZE,
             )
+        if tab == "pe-base-relocations":
+            count = (
+                len(self._selected_relocation_block.entries)
+                if self._selected_relocation_block is not None
+                else 0
+            )
+            return page_count(count, self.RECORD_PAGE_SIZE)
         if tab == "pe-imports":
             return page_count(len(self.structure.imports), self.RECORD_PAGE_SIZE)
         if tab == "pe-exports":
@@ -827,6 +932,9 @@ PEStructureScreen {
     def _render_active_page(self, tab: str) -> None:
         if tab == "pe-hex":
             self._render_hex()
+        elif tab == "pe-base-relocations":
+            if self._selected_relocation_block is not None:
+                self._render_resource_record(self._selected_relocation_block)
         elif tab == "pe-import-descriptors":
             self._render_import_descriptors()
         elif tab == "pe-imports":
@@ -839,8 +947,8 @@ PEStructureScreen {
         tab = self._active_paged_tab()
         if tab is None:
             message = (
-                "Read-only PE evidence view. In Resources: Enter opens; D downloads "
-                "the selected file."
+                "Read-only PE evidence view. In Directories: Enter opens and D "
+                "downloads a resource file; relocation blocks are pageable."
             )
         else:
             page = self._pages[tab]
@@ -882,7 +990,7 @@ PEStructureScreen {
     def action_export_resource(self) -> None:
         if self.query_one("#pe-tabs", TabbedContent).active != "pe-directories":
             self.query_one("#pe-status", Static).update(
-                Text("Open the Resources tab and select a resource file first.")
+                Text("Open the Directories tab and select a resource file first.")
             )
             return
         node = self.query_one("#pe-resource-tree", Tree).cursor_node

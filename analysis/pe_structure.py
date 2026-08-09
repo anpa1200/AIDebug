@@ -327,6 +327,40 @@ PEResourceRecord = PEResourceDirectoryRecord | PEResourceDataRecord
 
 
 @dataclass(frozen=True)
+class PEBaseRelocationEntry:
+    index: int
+    file_offset: int
+    type: int
+    type_name: str
+    offset: int
+    rva: int
+    address: int
+
+
+@dataclass(frozen=True)
+class PEBaseRelocationBlock:
+    index: int
+    file_offset: int
+    virtual_address: int
+    size_of_block: int
+    entries: tuple[PEBaseRelocationEntry, ...]
+
+
+@dataclass(frozen=True)
+class PEASLRAssessment:
+    dynamic_base: bool
+    high_entropy_va: bool
+    relocations_stripped: bool
+    directory_rva: int
+    directory_size: int
+    parsed_blocks: int
+    parsed_entries: int
+    usable_entries: int
+    status: str
+    clues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PEExportRecord:
     name: str
     ordinal: int
@@ -355,10 +389,13 @@ class PEStructure:
     import_descriptors: tuple[PEImportDescriptorRecord, ...] = ()
     delay_import_descriptors: tuple[PEDelayImportDescriptorRecord, ...] = ()
     resources: tuple[PEResourceRecord, ...] = ()
+    base_relocations: tuple[PEBaseRelocationBlock, ...] = ()
+    aslr: PEASLRAssessment | None = None
     imports_truncated: bool = False
     import_descriptors_truncated: bool = False
     delay_import_descriptors_truncated: bool = False
     resources_truncated: bool = False
+    base_relocations_truncated: bool = False
     exports_truncated: bool = False
 
 
@@ -418,6 +455,12 @@ class PEStructureAnalyzer:
                 self._delay_import_descriptors(pe, raw_data)
             )
             resources, resources_truncated = self._resources(pe, raw_data)
+            base_relocations, base_relocations_truncated = self._base_relocations(pe)
+            aslr = self._aslr_assessment(
+                pe,
+                base_relocations,
+                base_relocations_truncated,
+            )
             imports, imports_truncated = self._imports(pe)
             exports, exports_truncated = self._exports(pe)
 
@@ -450,10 +493,13 @@ class PEStructureAnalyzer:
                 import_descriptors=import_descriptors,
                 delay_import_descriptors=delay_descriptors,
                 resources=resources,
+                base_relocations=base_relocations,
+                aslr=aslr,
                 imports_truncated=imports_truncated,
                 import_descriptors_truncated=import_descriptors_truncated,
                 delay_import_descriptors_truncated=delay_descriptors_truncated,
                 resources_truncated=resources_truncated,
+                base_relocations_truncated=base_relocations_truncated,
                 exports_truncated=exports_truncated,
             )
         finally:
@@ -798,6 +844,149 @@ class PEStructureAnalyzer:
             reserved=int(getattr(data, "Reserved", 0)),
             sha256=digest,
             preview=preview,
+        )
+
+    @staticmethod
+    def _base_relocations(
+        pe,
+    ) -> tuple[tuple[PEBaseRelocationBlock, ...], bool]:
+        source_blocks = list(getattr(pe, "DIRECTORY_ENTRY_BASERELOC", ()))
+        truncated = len(source_blocks) > config.MAX_BASE_RELOCATION_BLOCKS
+        records = []
+        entry_count = 0
+        image_base = int(pe.OPTIONAL_HEADER.ImageBase)
+        for block_index, block in enumerate(
+            source_blocks[:config.MAX_BASE_RELOCATION_BLOCKS]
+        ):
+            structure = getattr(block, "struct", None)
+            if structure is None:
+                truncated = True
+                continue
+            block_offset = int(structure.get_file_offset())
+            page_rva = int(getattr(structure, "VirtualAddress", 0))
+            size_of_block = int(getattr(structure, "SizeOfBlock", 0))
+            entries = []
+            for entry_index, entry in enumerate(getattr(block, "entries", ())):
+                if entry_count >= config.MAX_BASE_RELOCATION_ENTRIES:
+                    truncated = True
+                    break
+                relocation_type = int(getattr(entry, "type", 0))
+                rva = int(getattr(entry, "rva", page_rva))
+                entry_structure = getattr(entry, "struct", None)
+                try:
+                    file_offset = int(entry_structure.get_file_offset())
+                except (AttributeError, TypeError, ValueError):
+                    file_offset = block_offset + 8 + entry_index * 2
+                entries.append(
+                    PEBaseRelocationEntry(
+                        index=entry_index,
+                        file_offset=file_offset,
+                        type=relocation_type,
+                        type_name=str(
+                            pefile.RELOCATION_TYPE.get(
+                                relocation_type,
+                                f"IMAGE_REL_BASED_UNKNOWN_{relocation_type}",
+                            )
+                        ),
+                        offset=max(0, rva - page_rva),
+                        rva=rva,
+                        address=image_base + rva,
+                    )
+                )
+                entry_count += 1
+            records.append(
+                PEBaseRelocationBlock(
+                    index=block_index,
+                    file_offset=block_offset,
+                    virtual_address=page_rva,
+                    size_of_block=size_of_block,
+                    entries=tuple(entries),
+                )
+            )
+            if entry_count >= config.MAX_BASE_RELOCATION_ENTRIES:
+                break
+        if len(records) < len(source_blocks):
+            truncated = True
+        return tuple(records), truncated
+
+    @staticmethod
+    def _aslr_assessment(
+        pe,
+        blocks: tuple[PEBaseRelocationBlock, ...],
+        truncated: bool,
+    ) -> PEASLRAssessment:
+        dll_characteristics = int(
+            getattr(pe.OPTIONAL_HEADER, "DllCharacteristics", 0)
+        )
+        file_characteristics = int(getattr(pe.FILE_HEADER, "Characteristics", 0))
+        directories = getattr(pe.OPTIONAL_HEADER, "DATA_DIRECTORY", ())
+        relocation_directory = directories[5] if len(directories) > 5 else None
+        directory_rva = int(getattr(relocation_directory, "VirtualAddress", 0))
+        directory_size = int(getattr(relocation_directory, "Size", 0))
+        dynamic_base = bool(dll_characteristics & 0x0040)
+        high_entropy_va = bool(dll_characteristics & 0x0020)
+        relocations_stripped = bool(file_characteristics & 0x0001)
+        parsed_entries = sum(len(block.entries) for block in blocks)
+        usable_entries = sum(
+            entry.type != 0 for block in blocks for entry in block.entries
+        )
+
+        if relocations_stripped:
+            status = (
+                "Base relocations are marked stripped; normal image rebasing is "
+                "not available."
+            )
+        elif not dynamic_base:
+            status = "The image does not declare DYNAMIC_BASE ASLR opt-in."
+        elif directory_rva == 0 or directory_size == 0:
+            status = (
+                "DYNAMIC_BASE is declared, but the base-relocation directory is absent."
+            )
+        elif usable_entries == 0:
+            status = (
+                "DYNAMIC_BASE is declared, but no usable non-ABSOLUTE relocation "
+                "entries were parsed."
+            )
+        else:
+            status = (
+                "The image declares DYNAMIC_BASE and contains usable base "
+                "relocations; it is structurally ASLR-compatible."
+            )
+
+        clues = [
+            f"DYNAMIC_BASE: {'set' if dynamic_base else 'not set'}",
+            f"HIGH_ENTROPY_VA: {'set' if high_entropy_va else 'not set'}",
+            f"RELOCS_STRIPPED: {'set' if relocations_stripped else 'not set'}",
+            (
+                f"Base-relocation directory: RVA 0x{directory_rva:08x}, "
+                f"size 0x{directory_size:x}"
+            ),
+            (
+                f"Parsed relocation evidence: {len(blocks):,} blocks, "
+                f"{parsed_entries:,} entries, {usable_entries:,} usable"
+            ),
+            (
+                "Header flags and relocation structure indicate compatibility; "
+                "they do not prove that the OS randomized this process at runtime."
+            ),
+        ]
+        if int(getattr(pe.OPTIONAL_HEADER, "Magic", 0)) != 0x20B and high_entropy_va:
+            clues.append("HIGH_ENTROPY_VA is not meaningful for this PE32 image.")
+        if truncated:
+            clues.append(
+                "Relocation evidence reached a configured display limit; counts are partial."
+            )
+        return PEASLRAssessment(
+            dynamic_base=dynamic_base,
+            high_entropy_va=high_entropy_va,
+            relocations_stripped=relocations_stripped,
+            directory_rva=directory_rva,
+            directory_size=directory_size,
+            parsed_blocks=len(blocks),
+            parsed_entries=parsed_entries,
+            usable_entries=usable_entries,
+            status=status,
+            clues=tuple(clues),
         )
 
     def _imports(self, pe) -> tuple[tuple[PEImportRecord, ...], bool]:

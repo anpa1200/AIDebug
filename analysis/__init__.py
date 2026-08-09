@@ -10,6 +10,9 @@ from .disassembler import Disassembler, Function, Instruction
 from .flirt import FlirtMatch, FlirtMatcher
 from .pattern_detector import MalwarePattern, PatternDetector
 from .pe_structure import (
+    PEASLRAssessment,
+    PEBaseRelocationBlock,
+    PEBaseRelocationEntry,
     PEDataDirectory,
     PEDelayImportDescriptorRecord,
     PEExportRecord,
@@ -39,6 +42,7 @@ __all__ = [
     'PEDataDirectory', 'PESectionRecord', 'PEImportDescriptorRecord',
     'PEDelayImportDescriptorRecord',
     'PEResourceDirectoryRecord', 'PEResourceDataRecord',
+    'PEBaseRelocationBlock', 'PEBaseRelocationEntry', 'PEASLRAssessment',
     'PEImportRecord', 'PEExportRecord',
     'render_hex_page',
 ]

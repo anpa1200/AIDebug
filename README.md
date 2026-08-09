@@ -131,6 +131,14 @@ download/export it with owner-only permissions under
 `./aidebug-resource-exports/<sample-hash>/`. Existing files and symlinked output
 directories are refused rather than overwritten or followed.
 
+The same Directories explorer includes every parsed `IMAGE_BASE_RELOCATION`
+block and pages through its relocation entries with file offset, type, offset
+within the 4 KiB page, target RVA, mapped VA, and decoded relocation-type name.
+Its ASLR assessment correlates `DYNAMIC_BASE`, `HIGH_ENTROPY_VA`,
+`RELOCS_STRIPPED`, the base-relocation directory, and usable non-ABSOLUTE
+entries. The result describes structural ASLR compatibility and explicitly does
+not claim that a particular process was randomized at runtime.
+
 The Import descriptors tab
 shows every standard 20-byte `IMAGE_IMPORT_DESCRIPTOR`, including INT and IAT
 RVAs, timestamp, forwarder chain, DLL-name RVA, file offset, and confirmed

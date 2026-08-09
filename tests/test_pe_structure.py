@@ -7,6 +7,9 @@ from textual.app import App
 
 from analysis import pe_structure
 from analysis.pe_structure import (
+    PEASLRAssessment,
+    PEBaseRelocationBlock,
+    PEBaseRelocationEntry,
     PEDataDirectory,
     PEDelayImportDescriptorRecord,
     PEExportRecord,
@@ -40,6 +43,8 @@ class FakeStructure:
         self._name = name
         self._offset = offset
         self._values = values
+        for name, value in values.items():
+            setattr(self, name, value)
 
     def dump_dict(self):
         result = {"Structure": self._name}
@@ -118,6 +123,23 @@ class FakeResourceDataEntry:
         return 0x2E0
 
 
+class FakeBaseRelocationStructure:
+    VirtualAddress = 0x1000
+    SizeOfBlock = 12
+
+    @staticmethod
+    def get_file_offset():
+        return 0x340
+
+
+class FakeRelocationEntryStructure:
+    def __init__(self, offset):
+        self.offset = offset
+
+    def get_file_offset(self):
+        return self.offset
+
+
 class FakePE:
     closed = False
 
@@ -145,6 +167,10 @@ class FakePE:
         self.OPTIONAL_HEADER.DATA_DIRECTORY = [
             SimpleNamespace(VirtualAddress=0x3000, Size=0x80),
             SimpleNamespace(VirtualAddress=0x4000, Size=0x90),
+            SimpleNamespace(VirtualAddress=0x5000, Size=0xA0),
+            SimpleNamespace(VirtualAddress=0, Size=0),
+            SimpleNamespace(VirtualAddress=0, Size=0),
+            SimpleNamespace(VirtualAddress=0x7000, Size=0x0C),
         ]
         self.sections = [FakeSection()]
         imported = SimpleNamespace(
@@ -190,6 +216,23 @@ class FakePE:
             struct=FakeResourceDirectoryHeader(0x280, 0, 1),
             entries=[type_entry],
         )
+        self.DIRECTORY_ENTRY_BASERELOC = [
+            SimpleNamespace(
+                struct=FakeBaseRelocationStructure(),
+                entries=[
+                    SimpleNamespace(
+                        type=3,
+                        rva=0x1010,
+                        struct=FakeRelocationEntryStructure(0x348),
+                    ),
+                    SimpleNamespace(
+                        type=0,
+                        rva=0x1000,
+                        struct=FakeRelocationEntryStructure(0x34A),
+                    ),
+                ],
+            )
+        ]
         exported = SimpleNamespace(
             name=b"Run", ordinal=1, address=0x1100, forwarder=b"OTHER.Target"
         )
@@ -391,6 +434,53 @@ def _model(raw_data=None):
                 b"<assembly>safe</assembly>",
             ),
         ),
+        base_relocations=(
+            PEBaseRelocationBlock(
+                index=0,
+                file_offset=0x340,
+                virtual_address=0x1000,
+                size_of_block=12,
+                entries=(
+                    PEBaseRelocationEntry(
+                        0,
+                        0x348,
+                        3,
+                        "IMAGE_REL_BASED_HIGHLOW",
+                        0x10,
+                        0x1010,
+                        0x140001010,
+                    ),
+                    PEBaseRelocationEntry(
+                        1,
+                        0x34A,
+                        0,
+                        "IMAGE_REL_BASED_ABSOLUTE",
+                        0,
+                        0x1000,
+                        0x140001000,
+                    ),
+                ),
+            ),
+        ),
+        aslr=PEASLRAssessment(
+            dynamic_base=True,
+            high_entropy_va=False,
+            relocations_stripped=False,
+            directory_rva=0x7000,
+            directory_size=12,
+            parsed_blocks=1,
+            parsed_entries=2,
+            usable_entries=1,
+            status=(
+                "The image declares DYNAMIC_BASE and contains usable base "
+                "relocations; it is structurally ASLR-compatible."
+            ),
+            clues=(
+                "DYNAMIC_BASE: set",
+                "Header flags and relocation structure indicate compatibility; "
+                "they do not prove runtime randomization.",
+            ),
+        ),
     )
 
 
@@ -528,6 +618,43 @@ def test_pe_structure_uses_analyzed_bytes_and_recovers_all_tables(monkeypatch):
     assert resource.complete
     assert resource.sha256 == hashlib.sha256(resource_bytes).hexdigest()
     assert resource.preview == resource_bytes
+    assert model.base_relocations == (
+        PEBaseRelocationBlock(
+            index=0,
+            file_offset=0x340,
+            virtual_address=0x1000,
+            size_of_block=12,
+            entries=(
+                PEBaseRelocationEntry(
+                    0,
+                    0x348,
+                    3,
+                    "IMAGE_REL_BASED_HIGHLOW",
+                    0x10,
+                    0x1010,
+                    0x140001010,
+                ),
+                PEBaseRelocationEntry(
+                    1,
+                    0x34A,
+                    0,
+                    "IMAGE_REL_BASED_ABSOLUTE",
+                    0,
+                    0x1000,
+                    0x140001000,
+                ),
+            ),
+        ),
+    )
+    assert model.aslr is not None
+    assert model.aslr.dynamic_base
+    assert model.aslr.high_entropy_va
+    assert model.aslr.relocations_stripped
+    assert model.aslr.directory_rva == 0x7000
+    assert model.aslr.parsed_blocks == 1
+    assert model.aslr.parsed_entries == 2
+    assert model.aslr.usable_entries == 1
+    assert "marked stripped" in model.aslr.status
     assert [(item.kind, item.name) for item in model.imports] == [
         ("import", "CreateFileW"),
         ("delay", "ordinal_7"),
@@ -644,6 +771,25 @@ def test_resource_data_record_marks_incomplete_file_ranges():
     assert record.sha256 is None
 
 
+def test_aslr_assessment_reports_missing_opt_in_and_directory():
+    pe = SimpleNamespace(
+        FILE_HEADER=SimpleNamespace(Characteristics=0),
+        OPTIONAL_HEADER=SimpleNamespace(
+            DllCharacteristics=0,
+            Magic=0x10B,
+            DATA_DIRECTORY=[SimpleNamespace(VirtualAddress=0, Size=0)] * 6,
+        ),
+    )
+
+    assessment = PEStructureAnalyzer._aslr_assessment(pe, (), False)
+
+    assert not assessment.dynamic_base
+    assert not assessment.relocations_stripped
+    assert assessment.directory_rva == 0
+    assert assessment.usable_entries == 0
+    assert "does not declare DYNAMIC_BASE" in assessment.status
+
+
 def test_resource_payload_filename_and_secure_export(tmp_path):
     model = _model()
     record = next(
@@ -747,7 +893,7 @@ def test_pe_structure_screen_pages_whole_file():
                 line.text for line in screen.query_one("#pe-directories-log").lines
             )
             assert "Optional-header data directories" in directories
-            assert "Resource explorer" in directories
+            assert "PE data-directory explorer" in directories
             assert "type → name/ID → language → data file" in directories
             tree = screen.query_one("#pe-resource-tree")
             data_node = screen._resource_nodes[
@@ -788,6 +934,31 @@ def test_pe_structure_screen_pages_whole_file():
             await pilot.pause()
             screen = app.screen
             tabs = screen.query_one("#pe-tabs")
+            tree = screen.query_one("#pe-resource-tree")
+            tree.move_cursor(screen._relocation_root)
+            await pilot.pause()
+            relocation_assessment = "\n".join(
+                line.text for line in screen.query_one("#pe-directories-log").lines
+            )
+            assert "ASLR assessment" in relocation_assessment
+            assert "DYNAMIC_BASE             set" in relocation_assessment
+            assert "HIGH_ENTROPY_VA           not set" in relocation_assessment
+            assert "RELOCS_STRIPPED           not set" in relocation_assessment
+            assert "structurally ASLR-compatible" in relocation_assessment
+            assert "do not prove runtime randomization" in relocation_assessment
+            tree.move_cursor(screen._relocation_nodes[0])
+            await pilot.pause()
+            relocation_block = "\n".join(
+                line.text for line in screen.query_one("#pe-directories-log").lines
+            )
+            assert "IMAGE_BASE_RELOCATION block 0" in relocation_block
+            assert "Header file offset       0x00000340" in relocation_block
+            assert "VirtualAddress (page RVA) 0x00001000" in relocation_block
+            assert "SizeOfBlock              0x0000000c" in relocation_block
+            assert "IMAGE_REL_BASED_HIGHLOW" in relocation_block
+            assert "IMAGE_REL_BASED_ABSOLUTE" in relocation_block
+            assert "0x00001010" in relocation_block
+            assert "0x0000000140001010" in relocation_block
             tabs.active = "pe-import-descriptors"
             await pilot.pause()
             descriptors = "\n".join(
