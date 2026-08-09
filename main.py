@@ -201,36 +201,55 @@ def run_learning(
     *,
     compiler: str | None = None,
     ghidra_headless: str | None = None,
+    collection_path: str | None = None,
 ) -> int:
     """Compile and analyze a trusted lesson function without executing it."""
     from learning import (
         LearningAnalysisError,
+        LearningCollectionError,
         LiveLearningAnalyzer,
         find_lessons,
         get_lesson,
+        load_learning_collection,
         render_catalog,
         render_lesson,
     )
 
-    normalized = (topic or "list").strip().lower()
-    exact = get_lesson(normalized)
-    if exact is not None:
-        print(
-            "[*] Compiling trusted learning case: "
-            f"learning/cases/{_terminal_text(exact.lesson_id)}.c"
+    try:
+        collection = (
+            load_learning_collection(collection_path) if collection_path else None
         )
+    except LearningCollectionError as exc:
+        raise CLIError(str(exc)) from exc
+    normalized = (topic or "list").strip().lower()
+    exact = (
+        collection.get_lesson(normalized) if collection is not None else get_lesson(normalized)
+    )
+    if exact is not None:
+        source_label = (
+            os.fspath(collection.source_paths[exact.lesson_id])
+            if collection is not None
+            else f"learning/cases/{exact.lesson_id}.c"
+        )
+        origin = "external" if collection is not None else "bundled"
+        print(f"[*] Compiling {origin} learning case: {_terminal_text(source_label)}")
         print("[*] The temporary ELF artifact will be analyzed and will not be executed.")
         print("[*] Recovering real machine instructions and Ghidra pseudo-code…")
         try:
             result = LiveLearningAnalyzer(
                 compiler=compiler,
                 ghidra_headless=ghidra_headless,
+                collection=collection,
             ).analyze(exact)
         except LearningAnalysisError as exc:
             raise CLIError(str(exc)) from exc
         render_lesson(result)
         return 0
-    matches = find_lessons(normalized)
+    matches = (
+        collection.find_lessons(normalized)
+        if collection is not None
+        else find_lessons(normalized)
+    )
     if not matches:
         raise CLIError(
             f"No learning lesson matches {_terminal_text(topic)!r}. "
@@ -245,18 +264,38 @@ def run_learning_tui(
     *,
     compiler: str | None = None,
     ghidra_headless: str | None = None,
+    collection_path: str | None = None,
 ) -> int:
     """Open real learning cases inside AIDebug's original Textual workspace."""
-    from learning import LearningAnalysisError, catalog, find_lessons, get_lesson
+    from learning import (
+        LearningAnalysisError,
+        LearningCollectionError,
+        catalog,
+        find_lessons,
+        get_lesson,
+        load_learning_collection,
+    )
     from ui import LearningModeApp
 
+    try:
+        collection = (
+            load_learning_collection(collection_path) if collection_path else None
+        )
+    except LearningCollectionError as exc:
+        raise CLIError(str(exc)) from exc
     normalized = (topic or "list").strip().lower()
-    exact = get_lesson(normalized)
+    exact = (
+        collection.get_lesson(normalized) if collection is not None else get_lesson(normalized)
+    )
     if exact is not None:
-        lessons = catalog()
+        lessons = collection.lessons if collection is not None else catalog()
         initial_lesson_id = exact.lesson_id
     else:
-        lessons = find_lessons(normalized)
+        lessons = (
+            collection.find_lessons(normalized)
+            if collection is not None
+            else find_lessons(normalized)
+        )
         initial_lesson_id = lessons[0].lesson_id if len(lessons) == 1 else None
     if not lessons:
         raise CLIError(
@@ -269,6 +308,7 @@ def run_learning_tui(
             initial_lesson_id=initial_lesson_id,
             compiler=compiler,
             ghidra_headless=ghidra_headless,
+            collection=collection,
         )
     except LearningAnalysisError as exc:
         raise CLIError(str(exc)) from exc
@@ -1120,6 +1160,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="ELF-capable compiler used for --learn (default: cc, gcc, or clang)",
     )
+    parser.add_argument(
+        "--learning-collection",
+        metavar="DIR",
+        help=(
+            "Load external C learning cases from DIR; expects case_common.h and "
+            "optional collection.json"
+        ),
+    )
     parser.add_argument("--list-sessions",  action="store_true", help="List past sessions")
     parser.add_argument(
         "--history",
@@ -1174,6 +1222,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     ghidra_headless = getattr(args, "ghidra_headless", None)
     learn = getattr(args, "learn", None)
     learning_compiler = getattr(args, "learning_compiler", None)
+    learning_collection = getattr(args, "learning_collection", None)
     history = getattr(args, "history", None)
     debug_options = bool(
         getattr(args, "breakpoint", [])
@@ -1202,8 +1251,9 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         if conflicting:
             parser.error("--learn cannot be combined with analysis, debug, or reporting options")
         return
-    if learning_compiler:
-        parser.error("--learning-compiler requires --learn")
+    if learning_compiler or learning_collection:
+        option = "--learning-compiler" if learning_compiler else "--learning-collection"
+        parser.error(f"{option} requires --learn")
     if args.binary and args.source:
         parser.error("--binary and --source are mutually exclusive")
     if args.offline and args.accept_ai_cost:
@@ -1343,6 +1393,7 @@ def _execute(args) -> int:
                 args.learn,
                 compiler=getattr(args, "learning_compiler", None),
                 ghidra_headless=getattr(args, "ghidra_headless", None),
+                collection_path=getattr(args, "learning_collection", None),
             )
 
         wants_report = args.report or args.yara or args.json_export

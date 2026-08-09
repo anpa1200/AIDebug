@@ -80,7 +80,7 @@ include = ["analysis*", "debugger*", "learning*", "reporting*", "storage*", "ui*
 [tool.setuptools.package-data]
 analysis = ["data/*.json", "data/*.java"]
 debugger = ["scripts/*.js"]
-learning = ["cases/*.c", "cases/*.h", "cases/*.md"]
+learning = ["cases/*.c", "cases/*.h", "cases/*.json", "cases/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

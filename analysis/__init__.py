@@ -9,6 +9,17 @@ from .decompiler import (
 from .disassembler import Disassembler, Function, Instruction
 from .flirt import FlirtMatch, FlirtMatcher
 from .pattern_detector import MalwarePattern, PatternDetector
+from .pe_structure import (
+    PEDataDirectory,
+    PEExportRecord,
+    PEHeader,
+    PEHeaderField,
+    PEImportRecord,
+    PESectionRecord,
+    PEStructure,
+    PEStructureAnalyzer,
+    render_hex_page,
+)
 from .source_analyzer import CSourceAnalyzer
 from .static_analyzer import BinaryInfo, ImportInfo, SectionInfo, StaticAnalyzer
 
@@ -20,6 +31,9 @@ __all__ = [
     'AIAnalyzer', 'AIAnalysis', 'AIAnalyzerError', 'OfflineAnalyzer',
     'CFGBuilder', 'CFGTextRenderer', 'CFGSVGRenderer', 'CFG',
     'PatternDetector', 'MalwarePattern', 'FlirtMatcher', 'FlirtMatch',
+    'PEStructureAnalyzer', 'PEStructure', 'PEHeader', 'PEHeaderField',
+    'PEDataDirectory', 'PESectionRecord', 'PEImportRecord', 'PEExportRecord',
+    'render_hex_page',
 ]
 
 

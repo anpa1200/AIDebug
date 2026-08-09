@@ -54,6 +54,7 @@ def test_main_help_runs():
     assert "--learn" in result.stdout
     assert "--history" in result.stdout
     assert "--learning-compiler" in result.stdout
+    assert "--learning-collection" in result.stdout
     assert "--breakpoint" in result.stdout
 
 
@@ -80,6 +81,24 @@ def test_learning_mode_lists_and_opens_lessons_without_database(tmp_path):
     assert opened.returncode == 0
     assert "Integer addition" in opened.stdout
     assert "Analyze one real compiled function" in opened.stdout
+
+    external = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--learn",
+            "list",
+            "--learning-collection",
+            "learning/cases",
+            "--no-tui",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert external.returncode == 0
+    assert "100 lessons" in external.stdout
+    assert "saturating-add" in external.stdout
 
 
 def test_version_matches_release_metadata():

@@ -6,6 +6,15 @@ copies only the selected file and `case_common.h` to a temporary directory,
 compiles it as an x86-64 ELF object, and analyzes the resulting machine code.
 The temporary artifact is never executed.
 
+It is also a complete external collection named **AIDebug Core 100**. The
+schema-versioned `collection.json` lists exactly 100 case IDs in display order.
+Load this directory through the same public interface available to custom
+collections:
+
+```bash
+aidebug --learn --learning-collection ./learning/cases
+```
+
 For example:
 
 ```bash
@@ -31,3 +40,13 @@ are tested to contain the instruction family named by the lesson.
 
 `case_common.h` contains only the fixed-width type definitions and attributes
 shared by the cases. It does not contain hidden implementations.
+
+For a custom collection, copy `case_common.h`, add standalone files named with
+lowercase IDs (for example `parse-header.c`), and expose a matching function
+(`learn_parse_header`). Without a manifest, AIDebug discovers `*.c` files in
+lexicographic order and supplies generic metadata. A `collection.json` can list
+ID strings or metadata objects containing `id`, optional `source`, `title`,
+`category`, `explanation`, `effects`, `analyst_clue`, and `pitfall` fields.
+
+External source is compiled but never executed. Because the compiler still
+parses it, only load source collections you have reviewed and trust.

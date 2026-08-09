@@ -11,9 +11,13 @@
 - Added `aidebug --history FILE_OR_SHA256` for local lookup when only a sample
   hash remains, plus session mode, analyzer, completion status, and completion
   time metadata in the SQLite store.
-- Expanded the real Learning Mode corpus from 47 to 53 standalone C files with
-  integer negation, masked-bit testing, variable rotate-right, post-tested
-  loops, binary search, and in-place buffer reversal cases.
+- Expanded the real Learning Mode corpus to 100 standalone C files spanning
+  instruction semantics, control flow, buffers, parsers, structures, callbacks,
+  and reverse-engineering patterns.
+- Added `--learning-collection DIR` to validate and load external C lesson
+  directories in the original GUI. Optional `collection.json` manifests define
+  stable ordering and metadata without allowing source paths to escape the
+  collection root.
 
 ## 1.3.3 - 2026-08-08
 
