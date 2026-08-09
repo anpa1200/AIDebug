@@ -99,7 +99,7 @@ jobs:
           cache: pip
 
       - name: Install declared Textual compatibility floor
-        run: python -m pip install -e . "textual==0.52.0" "pytest>=8"
+        run: python -m pip install -e . "textual==8.2.8" "pytest>=8"
 
       - name: Verify installed dependencies
         run: python -m pip check
