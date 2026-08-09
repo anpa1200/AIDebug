@@ -12,7 +12,8 @@
 
 Malware reverse-engineering CLI/TUI with deterministic offline triage, Ghidra
 reconstruction, optional LLM cross-checks, active local ELF debugging, guided
-assembly learning, ATT&CK candidates, YARA seeds, and analyst reports.
+assembly learning in the main full-screen GUI, ATT&CK candidates, YARA seeds,
+and analyst reports.
 
 > **Release status:** the source tree is the AIDebug v1.3.3 candidate. Until a
 > matching release is tagged and published, PyPI continues to serve historical
@@ -23,7 +24,7 @@ assembly learning, ATT&CK candidates, YARA seeds, and analyst reports.
 | Area | Evidence |
 |---|---|
 | Install and package | [PyPI package](https://pypi.org/project/1200km-aidebug/), [`pyproject.toml`](pyproject.toml), Debian/Kali files in [`debian/`](debian/) |
-| Usage documentation | [Quick start](#quick-start), [analyst workflow](docs/analyst-workflow.md), [safe examples](examples/README.md) |
+| Usage documentation | [Quick start](#quick-start), [Learning Mode](#learning-mode), [analyst workflow](docs/analyst-workflow.md), [safe examples](examples/README.md) |
 | Safety and scope | [Safety model](docs/safety-model.md), [security policy](SECURITY.md), [limitations](#limitations-and-honesty) |
 | Quality checks | [CI workflow](.github/workflows/ci.yml), unit tests in [`tests/`](tests/), package build job |
 | Reviewer evidence | [sample evidence index](docs/sample-evidence.md), screenshots in [`assets/screenshots/`](assets/screenshots/), mock outputs in [`examples/mock-output/`](examples/mock-output/) |
@@ -69,7 +70,7 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | Full reconstruction file | One provenance-marked C-like file for every discovered function |
 | LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
 | Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
-| Live Learning Mode | 47 individual C case files compiled to ELF, disassembled by AIDebug, and reconstructed by Ghidra |
+| Live Learning Mode | Main-GUI exploration of 47 standalone C cases with real compiler output, AIDebug disassembly, and Ghidra reconstruction |
 | Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
 
 ## Quick Start
@@ -148,42 +149,110 @@ Windows targets. GDB is a system dependency rather than a Python package.
 
 ### Learning mode
 
-Learning Mode is local, does not open the session database, and never sends
-content to an AI provider. It opens in AIDebug's original full-screen GUI: the
-left pane lists real cases, the center panes show genuine disassembly and exact
-source, and the right tabs show Ghidra pseudo-code, lesson guidance, and build
-evidence. Selecting a case compiles only that case:
+Learning Mode is integrated into AIDebug's original full-screen GUI. It is not
+a simulated instruction viewer: every lesson is backed by a standalone C file,
+a real temporary x86-64 ELF build, complete symbol disassembly, and Ghidra
+pseudo-code recovered from that build.
+
+Learning Mode runs locally, does not open the session database, never sends
+content to an AI provider, and never executes the compiled lesson artifact.
+
+#### Launch the GUI
+
+Open the complete 47-case catalog:
 
 ```bash
 aidebug --learn
+```
+
+Open the full catalog and immediately analyze a specific case:
+
+```bash
 aidebug --learn mov-load
 aidebug --learn lea-arithmetic
 aidebug --learn movsxd
 aidebug --learn xchg
 aidebug --learn subtract
+```
+
+Search by title, category, instruction, or concept to open a filtered catalog:
+
+```bash
+aidebug --learn "data movement"
 aidebug --learn "loops and arrays"
 ```
 
-For text-only output or automation, add `--no-tui`:
+An exact lesson ID keeps the entire catalog available and preselects that case.
+A broader search opens only matching cases.
+
+#### Main GUI layout
+
+| GUI area | Evidence shown |
+|---|---|
+| Learning Cases | Search result or all 47 standalone cases, with ID, category, and lesson title |
+| Real Disassembly | Actual function address, instruction bytes, and compiler-generated assembly |
+| Original C Source | Exact contents and repository path of the selected lesson file |
+| Pseudo-code tab | Ghidra's independent C-like reconstruction from the generated ELF |
+| Lesson tab | Meaning, register/flag effects, analyst clue, and common misreading |
+| Build Evidence tab | Function, ELF address, compiler identity, artifact SHA-256, and execution-safety statement |
+| Help tab | The live learning workflow and interpretation caveats |
+
+#### Controls
+
+| Key | Action |
+|---|---|
+| Arrow keys | Navigate the focused case table or scroll the focused evidence pane |
+| Enter | Compile and analyze the selected case |
+| Tab / Shift+Tab | Move focus between GUI controls |
+| R | Recompile and reanalyze the current case |
+| Q | Quit Learning Mode |
+
+Analyzed results are cached only for the current GUI session. Returning to a
+case reloads its cached result; press `R` when you want fresh compiler and
+Ghidra output.
+
+#### Evidence pipeline and safety
+
+Every lesson is a separate file under [`learning/cases/`](learning/cases/).
+When a case is selected, AIDebug:
+
+1. copies only that bundled C file and `case_common.h` to a temporary directory;
+2. compiles it into an x86-64 ELF shared object without running it;
+3. resolves the lesson's real symbol and size;
+4. decodes the complete compiler-generated function, including addresses and
+   instruction bytes;
+5. asks the same Ghidra backend used by normal analysis to reconstruct
+   pseudo-code from the machine code; and
+6. removes the temporary build directory when analysis finishes.
+
+The panes show the exact source-file path and contents, compiler identity,
+artifact SHA-256, symbol address, real assembly, Ghidra output, and the
+non-original-source warning. There is no handwritten pseudo-code fallback.
+Compiler versions and optimization behavior may produce different valid
+instruction sequences, so always compare pseudo-code with the displayed source
+and assembly.
+
+#### Text-only mode
+
+For terminal output, scripts, or CI, add `--no-tui`:
 
 ```bash
 aidebug --learn --no-tui
 aidebug --learn movsxd --no-tui
 ```
 
-Every lesson is a separate file under `learning/cases/`. Opening an exact
-lesson compiles only that bundled, safe C file into a temporary ELF shared
-object. That artifact is never loaded or executed.
-AIDebug resolves the real symbol and its size, decodes the complete
-compiler-generated function with addresses and instruction bytes, and asks the
-same Ghidra backend used by normal analysis to reconstruct pseudo-code from the
-machine code. The lesson shows the exact source-file path and contents,
-compiler identity, artifact SHA-256, symbol address, real assembly, Ghidra
-output, and the non-original-source warning. There is no handwritten
-pseudo-code fallback.
+Without a topic, text mode prints the catalog. An exact lesson ID compiles and
+analyzes that one case. A broader query prints matching catalog entries.
 
-Exact lessons require an ELF-capable `cc`, `gcc`, or `clang` and Ghidra's
-`analyzeHeadless`. Override discovery when necessary:
+#### Requirements and toolchain overrides
+
+Live cases require:
+
+- an x86-64 ELF-capable `cc`, `gcc`, or `clang`;
+- Ghidra's `analyzeHeadless`; and
+- a terminal supported by Textual for the full-screen interface.
+
+Override compiler or Ghidra discovery when necessary:
 
 ```bash
 aidebug --learn switch-dispatch \
@@ -268,6 +337,8 @@ material:
   loop for documentation.
 - [`examples/toy_c_analysis.c`](examples/toy_c_analysis.c) - a benign C fixture
   for sandboxed temporary-ELF analysis.
+- [`learning/cases/`](learning/cases/) - 47 benign, standalone C functions used
+  by the real Learning Mode compile/disassemble/decompile pipeline.
 - [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
   - hand-authored schema-v2 offline session example with an all-zero mock hash.
 - [`examples/mock-output/aidebug-candidate.yar`](examples/mock-output/aidebug-candidate.yar)
@@ -285,6 +356,11 @@ flowchart LR
   Sample[PE/ELF sample] --> Parse[PE/ELF parsing]
   Source[C source] --> Compile[Sandboxed temporary ELF compilation]
   Compile --> Parse
+  Lesson[Selected learning/cases/*.c] --> LearnCompile[Temporary non-executed x86-64 ELF]
+  LearnCompile --> LearnDisasm[Real instruction bytes]
+  LearnCompile --> LearnGhidra[Ghidra pseudo-code]
+  LearnDisasm --> LearnGUI[Main-GUI Learning Mode]
+  LearnGhidra --> LearnGUI
   Parse --> Disasm[Capstone disassembly]
   Disasm --> Ghidra[Ghidra reconstruction]
   Disasm --> Patterns[Malware pattern detection]
@@ -312,7 +388,7 @@ not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth
 | Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
 | Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
 | Active debug | Local ELF execution through GDB/MI with analyst-controlled breakpoints and instruction stepping |
-| Learning | 47 individually compiled x86-64 source cases with real assembly and Ghidra output |
+| Learning | 47 individually compiled x86-64 source cases in the main GUI, with exact C, real assembly, build evidence, and Ghidra output |
 | Reports | HTML, versioned AIDebug JSON, and YARA candidates |
 
 ## Safety
