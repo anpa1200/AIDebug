@@ -209,18 +209,52 @@ PEStructureScreen {
     def _render_sections(self) -> None:
         log = self.query_one("#pe-sections-log", RichLog)
         log.write(
-            "[bold cyan]Section table[/bold cyan]\n"
-            "Name       RVA        VA                 Virtual    Raw offset  Raw size  "
-            "Entropy  Characteristics"
+            "[bold cyan]IMAGE_SECTION_HEADER records[/bold cyan]\n"
+            "[dim]Each record is 40 bytes. Raw header values and decoded flags "
+            "are shown without executing the image.[/dim]"
         )
-        for section in self.structure.sections:
-            log.write(
-                f"{_safe(section.name, 64):<10} 0x{section.virtual_address:08x} "
-                f"0x{self.structure.image_base + section.virtual_address:016x} "
-                f"0x{section.virtual_size:08x} 0x{section.raw_offset:08x} "
-                f"0x{section.raw_size:08x} {section.entropy:7.3f}  "
-                f"0x{section.characteristics:08x}"
+        for index, section in enumerate(self.structure.sections, start=1):
+            header_offset = (
+                f" at file offset 0x{section.header_offset:08x}"
+                if section.header_offset is not None
+                else ""
             )
+            log.write(
+                f"\n[bold cyan][{index}] {_safe(section.name, 64)}[/bold cyan]"
+                f"[dim]{header_offset}[/dim]"
+            )
+            log.write("Field                         Value")
+            log.write(f"Name                          {_safe(section.name, 64)}")
+            log.write(f"VirtualSize                   0x{section.virtual_size:08x}")
+            log.write(f"VirtualAddress (RVA)          0x{section.virtual_address:08x}")
+            log.write(
+                "Mapped virtual address        "
+                f"0x{self.structure.image_base + section.virtual_address:016x}"
+            )
+            log.write(f"SizeOfRawData                 0x{section.raw_size:08x}")
+            log.write(f"PointerToRawData              0x{section.raw_offset:08x}")
+            log.write(
+                "PointerToRelocations           "
+                f"0x{section.pointer_to_relocations:08x}"
+            )
+            log.write(
+                "PointerToLinenumbers           "
+                f"0x{section.pointer_to_linenumbers:08x}"
+            )
+            log.write(f"NumberOfRelocations           {section.number_of_relocations}")
+            log.write(f"NumberOfLinenumbers           {section.number_of_linenumbers}")
+            log.write(f"Characteristics               0x{section.characteristics:08x}")
+            for flag_name in section.characteristic_flags:
+                log.write(f"                              [green]↳ {_safe(flag_name, 96)}[/green]")
+            permissions = "".join(
+                (
+                    "R" if section.characteristics & 0x40000000 else "-",
+                    "W" if section.characteristics & 0x80000000 else "-",
+                    "X" if section.characteristics & 0x20000000 else "-",
+                )
+            )
+            log.write(f"Memory permissions            {permissions}")
+            log.write(f"Entropy                       {section.entropy:.3f} [dim](derived)[/dim]")
         if not self.structure.sections:
             log.write("[dim]No sections were reported.[/dim]")
 

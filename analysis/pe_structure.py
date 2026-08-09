@@ -69,6 +69,50 @@ DLL_CHARACTERISTIC_FLAGS = (
     (0x8000, "IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE"),
 )
 
+SECTION_CHARACTERISTIC_FLAGS_BEFORE_ALIGNMENT = (
+    (0x00000008, "IMAGE_SCN_TYPE_NO_PAD"),
+    (0x00000020, "IMAGE_SCN_CNT_CODE"),
+    (0x00000040, "IMAGE_SCN_CNT_INITIALIZED_DATA"),
+    (0x00000080, "IMAGE_SCN_CNT_UNINITIALIZED_DATA"),
+    (0x00000100, "IMAGE_SCN_LNK_OTHER"),
+    (0x00000200, "IMAGE_SCN_LNK_INFO"),
+    (0x00000800, "IMAGE_SCN_LNK_REMOVE"),
+    (0x00001000, "IMAGE_SCN_LNK_COMDAT"),
+    (0x00004000, "IMAGE_SCN_NO_DEFER_SPEC_EXC"),
+    (0x00008000, "IMAGE_SCN_GPREL"),
+    (0x00020000, "IMAGE_SCN_MEM_PURGEABLE / IMAGE_SCN_MEM_16BIT"),
+    (0x00040000, "IMAGE_SCN_MEM_LOCKED"),
+    (0x00080000, "IMAGE_SCN_MEM_PRELOAD"),
+)
+
+SECTION_ALIGNMENT_FLAGS = {
+    0x00100000: "IMAGE_SCN_ALIGN_1BYTES",
+    0x00200000: "IMAGE_SCN_ALIGN_2BYTES",
+    0x00300000: "IMAGE_SCN_ALIGN_4BYTES",
+    0x00400000: "IMAGE_SCN_ALIGN_8BYTES",
+    0x00500000: "IMAGE_SCN_ALIGN_16BYTES",
+    0x00600000: "IMAGE_SCN_ALIGN_32BYTES",
+    0x00700000: "IMAGE_SCN_ALIGN_64BYTES",
+    0x00800000: "IMAGE_SCN_ALIGN_128BYTES",
+    0x00900000: "IMAGE_SCN_ALIGN_256BYTES",
+    0x00A00000: "IMAGE_SCN_ALIGN_512BYTES",
+    0x00B00000: "IMAGE_SCN_ALIGN_1024BYTES",
+    0x00C00000: "IMAGE_SCN_ALIGN_2048BYTES",
+    0x00D00000: "IMAGE_SCN_ALIGN_4096BYTES",
+    0x00E00000: "IMAGE_SCN_ALIGN_8192BYTES",
+}
+
+SECTION_CHARACTERISTIC_FLAGS_AFTER_ALIGNMENT = (
+    (0x01000000, "IMAGE_SCN_LNK_NRELOC_OVFL"),
+    (0x02000000, "IMAGE_SCN_MEM_DISCARDABLE"),
+    (0x04000000, "IMAGE_SCN_MEM_NOT_CACHED"),
+    (0x08000000, "IMAGE_SCN_MEM_NOT_PAGED"),
+    (0x10000000, "IMAGE_SCN_MEM_SHARED"),
+    (0x20000000, "IMAGE_SCN_MEM_EXECUTE"),
+    (0x40000000, "IMAGE_SCN_MEM_READ"),
+    (0x80000000, "IMAGE_SCN_MEM_WRITE"),
+)
+
 
 def decode_coff_characteristics(value: int) -> tuple[str, ...]:
     """Decode an IMAGE_FILE_HEADER Characteristics bitmask without hiding it."""
@@ -86,6 +130,39 @@ def decode_dll_characteristics(value: int) -> tuple[str, ...]:
     numeric = int(value)
     decoded = [name for mask, name in DLL_CHARACTERISTIC_FLAGS if numeric & mask]
     known_mask = sum(mask for mask, _name in DLL_CHARACTERISTIC_FLAGS)
+    unknown = numeric & ~known_mask
+    if unknown:
+        decoded.append(f"UNKNOWN_0x{unknown:x}")
+    return tuple(decoded)
+
+
+def decode_section_characteristics(value: int) -> tuple[str, ...]:
+    """Decode IMAGE_SECTION_HEADER Characteristics, including alignment."""
+    numeric = int(value)
+    decoded = [
+        name
+        for mask, name in SECTION_CHARACTERISTIC_FLAGS_BEFORE_ALIGNMENT
+        if numeric & mask
+    ]
+    alignment = numeric & 0x00F00000
+    if alignment:
+        decoded.append(
+            SECTION_ALIGNMENT_FLAGS.get(
+                alignment,
+                f"IMAGE_SCN_ALIGN_UNKNOWN_0x{alignment:x}",
+            )
+        )
+    decoded.extend(
+        name
+        for mask, name in SECTION_CHARACTERISTIC_FLAGS_AFTER_ALIGNMENT
+        if numeric & mask
+    )
+    known_mask = 0x00F00000
+    for mask, _name in (
+        SECTION_CHARACTERISTIC_FLAGS_BEFORE_ALIGNMENT
+        + SECTION_CHARACTERISTIC_FLAGS_AFTER_ALIGNMENT
+    ):
+        known_mask |= mask
     unknown = numeric & ~known_mask
     if unknown:
         decoded.append(f"UNKNOWN_0x{unknown:x}")
@@ -163,6 +240,12 @@ class PESectionRecord:
     raw_size: int
     characteristics: int
     entropy: float
+    pointer_to_relocations: int = 0
+    pointer_to_linenumbers: int = 0
+    number_of_relocations: int = 0
+    number_of_linenumbers: int = 0
+    characteristic_flags: tuple[str, ...] = ()
+    header_offset: int | None = None
 
 
 @dataclass(frozen=True)
@@ -344,6 +427,22 @@ class PEStructureAnalyzer:
             raw_size=int(section.SizeOfRawData),
             characteristics=int(section.Characteristics),
             entropy=entropy,
+            pointer_to_relocations=int(
+                getattr(section, "PointerToRelocations", 0)
+            ),
+            pointer_to_linenumbers=int(
+                getattr(section, "PointerToLinenumbers", 0)
+            ),
+            number_of_relocations=int(getattr(section, "NumberOfRelocations", 0)),
+            number_of_linenumbers=int(getattr(section, "NumberOfLinenumbers", 0)),
+            characteristic_flags=decode_section_characteristics(
+                int(section.Characteristics)
+            ),
+            header_offset=(
+                int(section.get_file_offset())
+                if callable(getattr(section, "get_file_offset", None))
+                else None
+            ),
         )
 
     @staticmethod

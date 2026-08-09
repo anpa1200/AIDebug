@@ -15,6 +15,7 @@ from analysis.pe_structure import (
     PEStructureAnalyzer,
     decode_coff_characteristics,
     decode_dll_characteristics,
+    decode_section_characteristics,
     dll_mitigation_clues,
     page_count,
     render_hex_page,
@@ -46,11 +47,19 @@ class FakeSection:
     Misc_VirtualSize = 0x222
     PointerToRawData = 0x400
     SizeOfRawData = 0x400
+    PointerToRelocations = 0x1234
+    PointerToLinenumbers = 0x5678
+    NumberOfRelocations = 3
+    NumberOfLinenumbers = 4
     Characteristics = 0x60000020
 
     @staticmethod
     def get_entropy():
         return 6.25
+
+    @staticmethod
+    def get_file_offset():
+        return 0x188
 
 
 class FakePE:
@@ -159,7 +168,25 @@ def _model(raw_data=None):
         ),
         data_directories=(PEDataDirectory(0, "EXPORT", 0x3000, 0x80),),
         sections=(
-            PESectionRecord(".text", 0x1000, 0x200, 0x400, 0x200, 0x60000020, 6.1),
+            PESectionRecord(
+                ".text",
+                0x1000,
+                0x200,
+                0x400,
+                0x200,
+                0x60000020,
+                6.1,
+                pointer_to_relocations=0x1234,
+                pointer_to_linenumbers=0x5678,
+                number_of_relocations=3,
+                number_of_linenumbers=4,
+                characteristic_flags=(
+                    "IMAGE_SCN_CNT_CODE",
+                    "IMAGE_SCN_MEM_EXECUTE",
+                    "IMAGE_SCN_MEM_READ",
+                ),
+                header_offset=0x188,
+            ),
         ),
         imports=(
             PEImportRecord("import", "KERNEL32.dll", "CreateFileW", None, 120, 0x140004000),
@@ -197,6 +224,16 @@ def test_pe_structure_uses_analyzed_bytes_and_recovers_all_tables(monkeypatch):
         "Optional header",
     ]
     assert model.sections[0].raw_offset == 0x400
+    assert model.sections[0].pointer_to_relocations == 0x1234
+    assert model.sections[0].pointer_to_linenumbers == 0x5678
+    assert model.sections[0].number_of_relocations == 3
+    assert model.sections[0].number_of_linenumbers == 4
+    assert model.sections[0].header_offset == 0x188
+    assert model.sections[0].characteristic_flags == (
+        "IMAGE_SCN_CNT_CODE",
+        "IMAGE_SCN_MEM_EXECUTE",
+        "IMAGE_SCN_MEM_READ",
+    )
     assert [(item.kind, item.name) for item in model.imports] == [
         ("import", "CreateFileW"),
         ("delay", "ordinal_7"),
@@ -257,6 +294,20 @@ def test_dll_characteristics_decode_and_missing_mitigation_clues():
     assert decode_dll_characteristics(0x141) == (
         "IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE",
         "IMAGE_DLLCHARACTERISTICS_NX_COMPAT",
+        "UNKNOWN_0x1",
+    )
+
+
+def test_section_characteristics_decode_alignment_permissions_and_unknown_bits():
+    assert decode_section_characteristics(0xE0300020) == (
+        "IMAGE_SCN_CNT_CODE",
+        "IMAGE_SCN_ALIGN_4BYTES",
+        "IMAGE_SCN_MEM_EXECUTE",
+        "IMAGE_SCN_MEM_READ",
+        "IMAGE_SCN_MEM_WRITE",
+    )
+    assert decode_section_characteristics(0x00000021) == (
+        "IMAGE_SCN_CNT_CODE",
         "UNKNOWN_0x1",
     )
     assert dll_mitigation_clues(0, pe32_plus=False) == (
@@ -325,6 +376,20 @@ def test_pe_structure_screen_pages_whole_file():
             assert "IMAGE_DLLCHARACTERISTICS_GUARD_CF" in headers
             assert "ASLR: declared via DYNAMIC_BASE" in headers
             assert "Header flags are clues, not proof" in headers
+            tabs.active = "pe-sections"
+            await pilot.pause()
+            sections = "\n".join(
+                line.text for line in screen.query_one("#pe-sections-log").lines
+            )
+            assert "Each record is 40 bytes" in sections
+            assert "PointerToRelocations" in sections
+            assert "PointerToLinenumbers" in sections
+            assert "NumberOfRelocations" in sections
+            assert "NumberOfLinenumbers" in sections
+            assert "IMAGE_SCN_CNT_CODE" in sections
+            assert "IMAGE_SCN_MEM_EXECUTE" in sections
+            assert "IMAGE_SCN_MEM_READ" in sections
+            assert "Memory permissions            R-X" in sections
             assert {pane.id for pane in screen.query("TabbedContent TabPane")} == {
                 "pe-overview",
                 "pe-hex",
