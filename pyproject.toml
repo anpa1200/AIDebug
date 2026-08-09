@@ -43,8 +43,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ai = ["anthropic>=0.40", "yara-python>=4.5.4"]
-dynamic = ["frida>=17,<18"]
-all = ["anthropic>=0.40", "frida>=17,<18", "yara-python>=4.5.4"]
+dynamic = ["frida>=17.17.0,<18"]
+all = ["anthropic>=0.40", "frida>=17.17.0,<18", "yara-python>=4.5.4"]
 dev = [
   "anthropic>=0.40",
   "bandit>=1.9.4",
