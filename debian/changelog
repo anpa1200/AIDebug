@@ -1,3 +1,12 @@
+aidebug (3.0.0-0kali1) kali-dev; urgency=medium
+
+  * Expand PE analysis with TLS, unwind, load-config, and CFG evidence.
+  * Add Authenticode, Rich/CodeView, overlay, and managed CLR inspection.
+  * Add explicit Anthropic, OpenAI, Gemini, and Ollama configuration.
+  * Link the published practical PE-analysis guide.
+
+ -- Andrey Pautov <1200km@gmail.com>  Mon, 10 Aug 2026 21:30:00 +0300
+
 aidebug (2.0.0-0kali1) kali-dev; urgency=medium
 
   * Add whole-file hex inspection and the full main-GUI PE structure view.

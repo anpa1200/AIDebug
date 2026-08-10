@@ -15,8 +15,8 @@ reconstruction, optional LLM cross-checks, active local ELF debugging, guided
 assembly learning in the main full-screen GUI, ATT&CK candidates, YARA seeds,
 and analyst reports.
 
-> **Current release:** [AIDebug v2.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0).
-> Its [PyPI distributions](https://pypi.org/project/1200km-aidebug/2.0.0/)
+> **Current release:** [AIDebug v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0).
+> Its [PyPI distributions](https://pypi.org/project/1200km-aidebug/3.0.0/)
 > were built from the immutable version-matched tag by the verified publishing
 > workflow.
 
@@ -37,6 +37,15 @@ and analyst reports.
 Curated-list resubmission should wait for additional release history and public
 usage evidence. This repository now documents the quality bar, but age and
 adoption still require time.
+
+## Published PE Analysis Guide
+
+The companion article
+[PE File Structure for Malware Analysis: A Practical Guide](https://1200km.com/articles/read/2026/2026-08-10-pe-file-structure-for-malware-analysis-d93acb97d9f3/)
+uses AIDebug to walk through PE headers, sections, imports, exports, resources,
+relocations, TLS callbacks, unwind data, mitigations, Authenticode, debug data,
+overlays, and managed .NET metadata. Use it as the guided analyst workflow for
+the Hex / PE workspace described below.
 
 ## Screenshots
 
@@ -67,7 +76,7 @@ A malware analyst runs AIDebug when a sample needs fast triage before deeper rev
 | YARA candidate rules | Detection-engineering seed that must be compiled and tested |
 | Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
 | CFG visualization | Function-level behavior review |
-| Hex / PE workspace | Read-only whole-file hex for every loaded binary; PE files additionally show DOS/NT/optional headers, sections, directories, imports, exports, forwarders, and overlays |
+| Hex / PE workspace | Read-only whole-file hex for every loaded binary; PE files additionally show native headers/directories, managed .NET/CLR metadata, imports, exports, signatures, and overlays |
 | Ghidra C-like decompilation | Native-code reconstruction for function triage; not recovered original source |
 | Full reconstruction file | One provenance-marked C-like file for every discovered function |
 | LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
@@ -115,10 +124,132 @@ set flag is decoded by name, including executable, DLL, system, relocation,
 32-bit-machine, and large-address-aware flags. Optional-header
 `DllCharacteristics` flags are also decoded, with cautious mitigation clues for
 ASLR, high-entropy VA, DEP/NX, CFG, integrity checks, AppContainer, and SEH.
-Imports include normal and delay-loaded entries; exports include ordinals and
-forwarders. Overlay offset and size are reported when extra data follows the
-mapped image. `P` remains an additional shortcut for analysts accustomed to
-opening PE Structure directly.
+The Sections tab exposes every field in each 40-byte `IMAGE_SECTION_HEADER`,
+including relocation and line-number pointers/counts, and decodes content,
+linker, alignment, and memory-permission flags. The Resources workspace keeps
+the optional-header directory table and expands the resource directory as a
+navigable, bounded type → name/ID → language → data-file explorer. It displays
+every parsed `IMAGE_RESOURCE_DIRECTORY` header and
+`IMAGE_RESOURCE_DATA_ENTRY`, including
+file offsets, RVA, declared and available sizes, code page, reserved value,
+SHA-256 of complete payloads, safe byte previews, and explicit malformed-range
+or traversal-limit warnings. Known numeric resource types are labelled by name.
+Select a resource file and press `Enter` to open its complete bytes in AIDebug's
+read-only, paged hex/text viewer; the payload is never launched. Press `D` to
+download/export it with owner-only permissions under
+`./aidebug-resource-exports/<sample-hash>/`. Existing files and symlinked output
+directories are refused rather than overwritten or followed.
+
+The same Directories explorer includes every parsed `IMAGE_BASE_RELOCATION`
+block and pages through its relocation entries with file offset, type, offset
+within the 4 KiB page, target RVA, mapped VA, and decoded relocation-type name.
+Its ASLR assessment correlates `DYNAMIC_BASE`, `HIGH_ENTROPY_VA`,
+`RELOCS_STRIPPED`, the base-relocation directory, and usable non-ABSOLUTE
+entries. The result describes structural ASLR compatibility and explicitly does
+not claim that a particular process was randomized at runtime.
+
+The TLS branch exposes every field in `IMAGE_TLS_DIRECTORY32` or
+`IMAGE_TLS_DIRECTORY64`, maps the template-data, index, and callback-table VAs
+back to RVAs and file offsets, hashes complete TLS template data, and provides a
+safe preview. Each bounded callback-table entry includes its pointer-entry file
+offset and callback VA/RVA/file offset, plus evidence of the terminating null
+pointer. The interface highlights that TLS callbacks may execute before the
+normal PE entry point and reports malformed, unmapped, or truncated tables.
+
+For x64 PE files, the Exceptions & unwind branch groups the `.pdata`
+`RUNTIME_FUNCTION` table into lazy 250-record folders and decodes the referenced
+`UNWIND_INFO`. It shows function RVA/VA ranges, unwind-data and file offsets,
+version and handler flags, prologue size, frame register/offset, each `UWOP_*`
+operation and its operands, exception or termination-handler metadata,
+language-specific-data location, and chained runtime functions. Invalid ranges,
+unexpected versions, truncated code arrays, and unmapped handler data are
+reported as evidence rather than silently ignored.
+
+The Load configuration & mitigations branch preserves every field exposed by
+the versioned `IMAGE_LOAD_CONFIG_DIRECTORY32/64`, including field offsets and
+sizes, and maps known VA pointer fields back to RVAs and file offsets. It fully
+decodes `GuardFlags` and correlates load-config metadata with Optional Header
+and relocation evidence for ASLR, high-entropy ASLR, DEP/NX, CFG, stack cookies,
+SafeSEH applicability, Return Flow Guard, EH continuation protection, XFG,
+retpoline, code integrity, and AppContainer. Findings distinguish “present,”
+“declared,” “not indicated,” and inconsistent/partial evidence; static metadata
+is never presented as proof of effective runtime policy.
+
+Its nested CFG evidence view correlates the Optional Header `GUARD_CF` bit with
+`CF_INSTRUMENTED`, `CFW_INSTRUMENTED`, and `CF_FUNCTION_TABLE_PRESENT`; maps the
+check/dispatch pointer slots and `GuardCFFunctionTable`; and safely parses the
+complete bounded GFIDS target table. It derives the `4 + n` record stride from
+the high `GuardFlags` nibble, maps every target RVA to its VA and file offset,
+decodes suppressed/export-suppressed metadata, verifies strict ordering and
+uniqueness, and reports partial, truncated, unmapped, or contradictory evidence.
+
+The Authenticode certificates & signatures branch treats the Security Directory
+address correctly as a file offset, walks every quadword-aligned
+`WIN_CERTIFICATE`, and decodes revision/type fields, PKCS#7 signer records,
+signing and countersignature times, nested-signature counts, and embedded X.509
+certificate subjects, issuers, serials, validity periods, fingerprints,
+algorithms, and CA status. For Authenticode SignedData it extracts the embedded
+SPC digest, independently calculates the PE image digest while excluding the
+checksum and certificate metadata, and reports match/mismatch/unavailable as
+separate evidence. It also verifies each signer's signed-content digest and
+supported RSA/ECDSA/DSA PKCS#7 signature using the matched embedded certificate.
+These cryptographic checks are explicitly not presented as Windows root trust,
+revocation, or timestamp-authority validation. Every complete `bCertificate`
+blob can be opened in the bounded viewer or safely exported without overwrite.
+
+The Rich header branch searches only the bounded DOS-stub region before the PE
+signature, verifies the XOR-decoded `DanS` marker and padding, preserves the raw
+XOR key/checksum, and decodes each product ID, build number, and use count. Rich
+metadata is explicitly presented as a compiler/linker clue: it is undocumented,
+may be absent, and can be copied or forged, so it is not treated as attribution.
+
+The Debug data & CodeView branch parses each 28-byte
+`IMAGE_DEBUG_DIRECTORY` record with its characteristics, timestamp, version,
+type, declared payload size, payload RVA, and payload file offset. Complete
+payloads receive a SHA-256 digest and can be opened in the paged viewer or
+exported safely. For CodeView `RSDS` records, AIDebug decodes the PDB signature
+GUID using Windows GUID byte order, the PDB age, and the bounded, untrusted PDB
+path; legacy `NB10` records expose their age and path as well. Malformed,
+unmapped, unterminated, oversized, and truncated records remain visible with
+explicit warnings instead of being silently accepted.
+
+Overlay evidence now includes the exact file offset and size, SHA-256, entropy,
+and a bounded preview. Press `Enter` to inspect every trailing byte or `D` to
+export the exact range under `./aidebug-overlay-exports/<sample-hash>/` with
+owner-only permissions and no overwrite. An overlay may be a certificate table,
+installer payload, configuration, or malicious content; its presence alone is
+not classified as malicious.
+
+The `.NET / CLR assembly` branch recognizes the Optional Header COM Descriptor
+and parses the complete bounded `IMAGE_COR20_HEADER`: runtime version, CLR
+flags, managed-token or native-RVA entry point, metadata, managed resources,
+strong-name signature, code-manager table, VTable fixups, export jumps, and
+managed-native-header directories. It decodes `ILONLY`, 32-bit-required/
+preferred, IL-library, strong-name-signed, native-entry-point, and debug-tracking
+flags while preserving unknown bits.
+
+AIDebug validates the `BSJB` metadata root and enumerates `#~`/`#-`, `#Strings`,
+`#US`, `#GUID`, `#Blob`, `#Pdb`, and nonstandard streams with exact offsets,
+sizes, completeness, SHA-256, and bounded previews. The tables stream exposes
+every present ECMA-335 table with row count, calculated row size, and file
+offset. Module and Assembly rows provide the managed module name, assembly
+name/version/culture/flags/hash algorithm; AssemblyRef rows become navigable
+dependency records. Complete stream bytes open with `Enter` and export with `D`
+under `./aidebug-dotnet-exports/<sample-hash>/`. Strong-name presence is shown
+as identity/integrity metadata, not publisher trust, and declared dependencies
+are not presented as proof of runtime loading. The CLR is never initialized and
+no managed code executes.
+
+The Import descriptors tab
+shows every standard 20-byte `IMAGE_IMPORT_DESCRIPTOR`, including INT and IAT
+RVAs, timestamp, forwarder chain, DLL-name RVA, file offset, and confirmed
+all-zero terminator evidence. The same paged workspace shows complete 32-byte
+`IMAGE_DELAYLOAD_DESCRIPTOR` records, distinguishes RVA-based and legacy
+VA-based forms, preserves reserved attribute bits, and confirms the all-zero
+terminator. Imports include normal and delay-loaded function entries; exports
+include ordinals and forwarders. Overlay offset and size are reported when
+extra data follows the mapped image. `P` remains an additional shortcut for
+analysts accustomed to opening PE Structure directly.
 
 The Hex tab covers every byte of the exact file content AIDebug hashed. It uses
 4 KiB pages instead of creating one unbounded terminal document: use
@@ -342,13 +473,66 @@ The base source installation supports deterministic offline analysis. After the
 next release, the PyPI distribution remains `1200km-aidebug` and the command is
 `aidebug`.
 
-Remote AI analysis is an optional extra:
+AI-assisted analysis is an optional extra with four provider paths: Anthropic,
+OpenAI, Google Gemini, and a local Ollama server. Install the adapters and make
+a private configuration file:
 
 ```bash
 pip install -e ".[ai]"
-export ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env
+chmod 600 .env
+```
+
+Keep `AIDEBUG_LLM_PROVIDER=auto` and uncomment exactly one credential in
+`.env`. AIDebug selects the only configured provider:
+
+```dotenv
+# Anthropic
+ANTHROPIC_API_KEY=replace_with_your_key
+
+# OpenAI
+# OPENAI_API_KEY=replace_with_your_key
+
+# Google Gemini
+# GEMINI_API_KEY=replace_with_your_key
+
+# Local Ollama (no cloud API key)
+# OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+```
+
+Then start AIDebug normally:
+
+```bash
 aidebug --binary /path/to/sample
 ```
+
+Do not paste API keys into screenshots, shell history, issue reports, or chat.
+Revoke an exposed key in the Anthropic Console before creating a replacement.
+The `.env` file is ignored by Git; `.env.example` contains placeholders only.
+Operating-system environment variables override `.env`. When more than one
+credential is configured, set `AIDEBUG_LLM_PROVIDER` explicitly to
+`anthropic`, `openai`, `gemini`, or `ollama` so evidence is never silently sent
+to the wrong backend.
+
+Provider defaults are `claude-opus-4-8`, `gpt-5.6-terra`,
+`gemini-3.6-flash`, and `qwen3:8b` respectively. Override only the selected
+provider with `AIDEBUG_ANTHROPIC_MODEL`, `AIDEBUG_OPENAI_MODEL`,
+`AIDEBUG_GEMINI_MODEL`, or `AIDEBUG_OLLAMA_MODEL`. The legacy
+`AIDEBUG_AI_MODEL` variable remains a global override.
+
+For Ollama, pull and serve the configured model before starting AIDebug:
+
+```bash
+ollama pull qwen3:8b
+ollama serve
+```
+
+Ollama evidence stays on the configured local endpoint and does not require
+`--accept-ai-cost`; remote bulk analysis still requires that acknowledgement.
+Use `AIDEBUG_ENV_FILE=/absolute/path/to/private.env` when the configuration is
+stored outside the repository. AIDebug deliberately does not auto-load `.env`
+from the current working directory because malware-analysis directories are
+untrusted.
 
 The `ai` extra includes both the Anthropic SDK and `yara-python`: remote YARA
 candidates are accepted only after local compilation and broad-rule probes.

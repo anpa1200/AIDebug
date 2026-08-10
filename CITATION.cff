@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this project in research, reporting, or tooling, please cite it."
 title: "AIDebug"
-version: "2.0.0"
-date-released: "2026-08-09"
+version: "3.0.0"
+date-released: "2026-08-10"
 authors:
   - family-names: "Pautov"
     given-names: "Andrey"

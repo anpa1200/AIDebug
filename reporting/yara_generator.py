@@ -7,8 +7,6 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-import config
-
 from ._io import atomic_write_text
 
 YARA_SYSTEM = (
@@ -163,30 +161,33 @@ class YaraGenerator:
         *,
         allow_remote: bool = True,
     ):
-        self._api_key = api_key or config.ANTHROPIC_API_KEY
+        self._api_key = api_key
         self._client = client
+        self._analyzer = None
         self._allow_remote = allow_remote
 
     @property
     def client(self):
+        """Compatibility access to the selected provider's SDK client."""
+        return self.analyzer.client
+
+    @property
+    def analyzer(self):
         if not self._allow_remote:
             raise RuntimeError("Remote AI generation is disabled")
-        if self._client is None:
-            if not self._api_key:
-                raise ValueError(
-                    "ANTHROPIC_API_KEY is required when high-risk functions need AI YARA generation"
+        if self._analyzer is None:
+            from analysis.ai_analyzer import AIAnalyzer
+
+            if self._client is not None or self._api_key is not None:
+                self._analyzer = AIAnalyzer(
+                    api_key=self._api_key,
+                    client=self._client,
+                    provider="anthropic",
                 )
-            try:
-                import anthropic
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Remote YARA generation requires the optional 'anthropic' package"
-                ) from exc
-            self._client = anthropic.Anthropic(
-                api_key=self._api_key,
-                timeout=config.AI_TIMEOUT_SECONDS,
-            )
-        return self._client
+            else:
+                self._analyzer = AIAnalyzer()
+            self._client = self._analyzer.client
+        return self._analyzer
 
     def generate(
         self,
@@ -301,22 +302,19 @@ class YaraGenerator:
         )
 
         try:
-            response = self.client.messages.create(
-                model=config.AI_MODEL,
-                max_tokens=1024,
-                system=YARA_SYSTEM,
-                messages=[{"role": "user", "content": prompt}],
+            candidate = self.analyzer._create_message(
+                YARA_SYSTEM,
+                [{"role": "user", "content": prompt}],
+                1024,
             )
-            blocks = getattr(response, "content", None)
-            raw = getattr(blocks[0], "text", "") if blocks else ""
-            candidate = raw.strip() if isinstance(raw, str) else ""
+            candidate = candidate.strip()
             if self._valid_generated_rule(candidate, rule_name):
                 return candidate
         except YaraGenerationError:
             raise
         except Exception as exc:
             raise YaraGenerationError(
-                f"Remote YARA request failed for {rule_name} ({type(exc).__name__}). "
+                f"Remote YARA request failed for {rule_name}: {exc}. "
                 "No deterministic fallback was substituted; retry or rerun with "
                 "--offline and without --accept-ai-cost for deliberate offline generation."
             ) from exc

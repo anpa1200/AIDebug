@@ -1360,7 +1360,18 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             parser.error("--source accepts files with the .c extension")
 
         is_bulk = args.mode == "dynamic" or args.no_tui or wants_report
-        if is_bulk and not args.offline and not args.accept_ai_cost:
+        llm_settings = None
+        if not args.offline:
+            try:
+                llm_settings = config.resolve_llm_settings()
+            except ValueError as exc:
+                parser.error(str(exc))
+        # Preserve the cost boundary even before credentials are configured.
+        # Only an explicitly resolved local provider bypasses acknowledgement.
+        uses_billable_remote = not args.offline and not bool(
+            llm_settings and llm_settings.get("is_local")
+        )
+        if is_bulk and uses_billable_remote and not args.accept_ai_cost:
             parser.error(
                 "bulk remote analysis requires --accept-ai-cost; use --offline "
                 "to keep all analysis local"
@@ -1373,11 +1384,21 @@ def _make_analyzer(offline: bool):
     if offline:
         print("[*] Offline mode: no sample data will be sent to a remote AI service.")
         return OfflineAnalyzer()
-    if not config.ANTHROPIC_API_KEY:
+    try:
+        settings = config.resolve_llm_settings()
+    except ValueError as exc:
+        raise CLIError(str(exc)) from exc
+    if settings is None:
         raise CLIError(
-            "ANTHROPIC_API_KEY is not set. Export it for AI analysis or use --offline."
+            "No LLM provider is configured. Add one API key to AIDebug's .env, "
+            "configure OLLAMA_BASE_URL for a local model, or use --offline."
         )
-    return AIAnalyzer()
+    return AIAnalyzer(
+        provider=settings["provider"],
+        model=settings["model"],
+        api_key=settings["api_key"],
+        base_url=settings["base_url"],
+    )
 
 
 def _execute(args) -> int:
