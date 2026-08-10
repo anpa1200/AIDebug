@@ -1,740 +1,304 @@
 # AIDebug
 
-[![PyPI](https://img.shields.io/pypi/v/1200km-aidebug.svg)](https://pypi.org/project/1200km-aidebug/)
-[![Python](https://img.shields.io/pypi/pyversions/1200km-aidebug.svg)](https://pypi.org/project/1200km-aidebug/)
+[![PyPI v3.0.0](https://img.shields.io/badge/PyPI-v3.0.0-blue)](https://pypi.org/project/1200km-aidebug/3.0.0/)
+[![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/1200km-aidebug/3.0.0/)
 [![CI](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml)
-[![Publish](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml)
+[![Publish to PyPI](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/publish.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![External submissions](https://img.shields.io/badge/External%20submissions-mixed-informational)](DISCOVERY.md)
-[![awesome-yara](https://img.shields.io/badge/awesome--yara-accepted-brightgreen)](https://github.com/InQuest/awesome-yara/pull/78)
-[![REMnux proposal](https://img.shields.io/badge/REMnux-deferred-lightgrey)](https://github.com/REMnux/salt-states/issues/345)
-[![BlackArch proposal](https://img.shields.io/badge/BlackArch-submitted-yellow)](https://github.com/BlackArch/blackarch/issues/4965)
+[![Release](https://img.shields.io/github/v/release/anpa1200/AIDebug)](https://github.com/anpa1200/AIDebug/releases/latest)
 
-Malware reverse-engineering CLI/TUI with deterministic offline triage, Ghidra
-reconstruction, optional LLM cross-checks, active local ELF debugging, guided
-assembly learning in the main full-screen GUI, ATT&CK candidates, YARA seeds,
-and analyst reports.
+AIDebug is an evidence-focused malware reverse-engineering CLI and terminal UI.
+It combines deterministic offline triage, whole-file hex inspection, deep PE
+structure analysis, Capstone disassembly, Ghidra reconstruction, optional LLM
+cross-checks, local ELF debugging, compiled learning exercises, and
+analyst-review reporting.
 
-> **Current release:** [AIDebug v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0).
-> Its [PyPI distributions](https://pypi.org/project/1200km-aidebug/3.0.0/)
-> were built from the immutable version-matched tag by the verified publishing
-> workflow.
+> Current release: [AIDebug v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0),
+> published as [`1200km-aidebug`](https://pypi.org/project/1200km-aidebug/3.0.0/).
 
-## Project Maturity Evidence
+## Highlights
 
-| Area | Evidence |
-|---|---|
-| Install and package | [PyPI package](https://pypi.org/project/1200km-aidebug/), [`pyproject.toml`](pyproject.toml), Debian/Kali files in [`debian/`](debian/) |
-| Usage documentation | [Quick start](#quick-start), [Learning Mode](#learning-mode), [analyst workflow](docs/analyst-workflow.md), [safe examples](examples/README.md) |
-| Safety and scope | [Safety model](docs/safety-model.md), [security policy](SECURITY.md), [limitations](#limitations-and-honesty) |
-| Quality checks | [CI workflow](.github/workflows/ci.yml), unit tests in [`tests/`](tests/), package build job |
-| Reviewer evidence | [sample evidence index](docs/sample-evidence.md), screenshots in [`assets/screenshots/`](assets/screenshots/), mock outputs in [`examples/mock-output/`](examples/mock-output/) |
-| Validation | [validation plan](docs/validation-plan.md), deterministic tests for pattern detection and JSON export |
-| Maintenance | [maintainers](MAINTAINERS.md), [roadmap](ROADMAP.md), [changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md) |
-| Positioning | [comparison](docs/comparison.md), [curated-list resubmission plan](docs/curated-list-resubmission-plan.md) |
-| Release gate | [release readiness](docs/release-readiness.md), [`scripts/release-readiness.sh`](scripts/release-readiness.sh) |
+- Deterministic PE and ELF static triage without requiring an AI service.
+- Read-only, paged hex viewer for the complete analyzed file.
+- Deep PE32/PE32+ structure explorer with mapped RVA, VA, and file offsets.
+- Ghidra-backed C-like reconstruction for one function or the complete bounded
+  function set.
+- Optional evidence-grounded review through Anthropic, OpenAI, Google Gemini,
+  or a local Ollama-compatible endpoint.
+- GDB-backed local ELF debugging with breakpoints, stepping, registers, deltas,
+  disassembly context, and function input/output candidates.
+- One hundred standalone C learning cases with real compiler output,
+  disassembly, and Ghidra pseudo-code in the main GUI.
+- SHA-256-indexed local analysis history and compatible finding restoration.
+- HTML, versioned JSON, YARA-candidate, ATT&CK-candidate, and CFG outputs for
+  analyst review.
 
-Curated-list resubmission should wait for additional release history and public
-usage evidence. This repository now documents the quality bar, but age and
-adoption still require time.
+## Installation
 
-## Published PE Analysis Guide
+Install the stable package from PyPI:
 
-The companion article
-[PE File Structure for Malware Analysis: A Practical Guide](https://1200km.com/articles/read/2026/2026-08-10-pe-file-structure-for-malware-analysis-d93acb97d9f3/)
-uses AIDebug to walk through PE headers, sections, imports, exports, resources,
-relocations, TLS callbacks, unwind data, mitigations, Authenticode, debug data,
-overlays, and managed .NET metadata. Use it as the guided analyst workflow for
-the Hex / PE workspace described below.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install 1200km-aidebug==3.0.0
+aidebug --version
+```
 
-## Screenshots
+Install optional capabilities as needed:
 
-These are illustrative captures associated with the companion walkthrough
-article; they are not automated accuracy evidence. See the
-[capture provenance and checksums](assets/screenshots/README.md).
+```bash
+# Remote/local LLM providers and validated YARA generation
+python -m pip install "1200km-aidebug[ai]==3.0.0"
 
-![AIDebug TUI function analysis](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/tui-function-analysis.png)
+# Frida dynamic instrumentation
+python -m pip install "1200km-aidebug[dynamic]==3.0.0"
 
-| Behavioral patterns | Control flow graph |
-|---|---|
-| ![AIDebug behavioral patterns tab](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/behavioral-patterns-tab.png) | ![AIDebug CFG visualization](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/control-flow-graph.png) |
+# All optional Python integrations
+python -m pip install "1200km-aidebug[all]==3.0.0"
+```
 
-| Pattern detection output | Four-panel TUI |
-|---|---|
-| ![AIDebug pattern detection output](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/pattern-detection-output.png) | ![AIDebug four-panel TUI](https://raw.githubusercontent.com/anpa1200/AIDebug/main/assets/screenshots/four-panel-tui.png) |
-
-## What This Is For
-
-A malware analyst runs AIDebug when a sample needs fast triage before deeper reverse engineering. The goal is not magic attribution. The goal is structured behavior, technique hypotheses, and review-ready seed material.
-
-## What It Produces
-
-| Output | Use |
-|---|---|
-| HTML report | Analyst review and case notes |
-| Versioned JSON report | Custom SIEM/SOAR adapter input; no vendor-native or STIX schema is claimed |
-| YARA candidate rules | Detection-engineering seed that must be compiled and tested |
-| Heuristic IOC strings in JSON | Analyst-reviewed pivot candidates, not a standalone IOC feed |
-| CFG visualization | Function-level behavior review |
-| Hex / PE workspace | Read-only whole-file hex for every loaded binary; PE files additionally show native headers/directories, managed .NET/CLR metadata, imports, exports, signatures, and overlays |
-| Ghidra C-like decompilation | Native-code reconstruction for function triage; not recovered original source |
-| Full reconstruction file | One provenance-marked C-like file for every discovered function |
-| LLM decompilation cross-check | Assembly-grounded consistency/uncertainty review for AI-analyzed functions |
-| Active ELF debugger | GDB breakpoints, stepping, registers/deltas, and function I/O candidates |
-| Live Learning Mode | Main-GUI exploration of 100 standalone C cases or a validated external collection, with real compiler output, AIDebug disassembly, and Ghidra reconstruction |
-| Hash-indexed analysis history | Local recovery of prior sessions and compatible AI findings when the same SHA-256 is opened again |
-| Remote-AI ATT&CK candidate | Technique-level hypothesis for analyst validation |
-
-## Quick Start
-
-### Current source checkout
+For development:
 
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-aidebug --help
-aidebug --version
-aidebug --binary /path/to/sample --offline --no-tui --json-export --out-dir reports/
+python -m pip install -e ".[dev,dynamic]"
 ```
 
-ELF binaries use the same static-analysis command as PE files:
+Ghidra, GDB, Bubblewrap, a C compiler, and Frida target components are external
+tools used only by the workflows that require them.
 
-```bash
-aidebug --binary /path/to/sample.elf --offline --no-tui
-```
+## Quick Start
 
-### Hex viewer and PE Structure workspace
-
-Open a supported binary in the main GUI, then press `X`:
+Open a PE or ELF sample in the main terminal interface:
 
 ```bash
 aidebug --binary /path/to/sample.exe --offline
-aidebug --binary /path/to/sample.elf --offline
 ```
 
-Every loaded binary receives a whole-file Hex view plus file metadata. When the
-file is PE32 or PE32+, AIDebug automatically opens the richer PE workspace with
-Overview, Hex, Headers, Sections, Directories, Imports, and Exports tabs. The
-header view includes the DOS header, NT signature, COFF file header, and
-optional header. The raw COFF `Characteristics` bitmask is preserved and each
-set flag is decoded by name, including executable, DLL, system, relocation,
-32-bit-machine, and large-address-aware flags. Optional-header
-`DllCharacteristics` flags are also decoded, with cautious mitigation clues for
-ASLR, high-entropy VA, DEP/NX, CFG, integrity checks, AppContainer, and SEH.
-The Sections tab exposes every field in each 40-byte `IMAGE_SECTION_HEADER`,
-including relocation and line-number pointers/counts, and decodes content,
-linker, alignment, and memory-permission flags. The Resources workspace keeps
-the optional-header directory table and expands the resource directory as a
-navigable, bounded type → name/ID → language → data-file explorer. It displays
-every parsed `IMAGE_RESOURCE_DIRECTORY` header and
-`IMAGE_RESOURCE_DATA_ENTRY`, including
-file offsets, RVA, declared and available sizes, code page, reserved value,
-SHA-256 of complete payloads, safe byte previews, and explicit malformed-range
-or traversal-limit warnings. Known numeric resource types are labelled by name.
-Select a resource file and press `Enter` to open its complete bytes in AIDebug's
-read-only, paged hex/text viewer; the payload is never launched. Press `D` to
-download/export it with owner-only permissions under
-`./aidebug-resource-exports/<sample-hash>/`. Existing files and symlinked output
-directories are refused rather than overwritten or followed.
-
-The same Directories explorer includes every parsed `IMAGE_BASE_RELOCATION`
-block and pages through its relocation entries with file offset, type, offset
-within the 4 KiB page, target RVA, mapped VA, and decoded relocation-type name.
-Its ASLR assessment correlates `DYNAMIC_BASE`, `HIGH_ENTROPY_VA`,
-`RELOCS_STRIPPED`, the base-relocation directory, and usable non-ABSOLUTE
-entries. The result describes structural ASLR compatibility and explicitly does
-not claim that a particular process was randomized at runtime.
-
-The TLS branch exposes every field in `IMAGE_TLS_DIRECTORY32` or
-`IMAGE_TLS_DIRECTORY64`, maps the template-data, index, and callback-table VAs
-back to RVAs and file offsets, hashes complete TLS template data, and provides a
-safe preview. Each bounded callback-table entry includes its pointer-entry file
-offset and callback VA/RVA/file offset, plus evidence of the terminating null
-pointer. The interface highlights that TLS callbacks may execute before the
-normal PE entry point and reports malformed, unmapped, or truncated tables.
-
-For x64 PE files, the Exceptions & unwind branch groups the `.pdata`
-`RUNTIME_FUNCTION` table into lazy 250-record folders and decodes the referenced
-`UNWIND_INFO`. It shows function RVA/VA ranges, unwind-data and file offsets,
-version and handler flags, prologue size, frame register/offset, each `UWOP_*`
-operation and its operands, exception or termination-handler metadata,
-language-specific-data location, and chained runtime functions. Invalid ranges,
-unexpected versions, truncated code arrays, and unmapped handler data are
-reported as evidence rather than silently ignored.
-
-The Load configuration & mitigations branch preserves every field exposed by
-the versioned `IMAGE_LOAD_CONFIG_DIRECTORY32/64`, including field offsets and
-sizes, and maps known VA pointer fields back to RVAs and file offsets. It fully
-decodes `GuardFlags` and correlates load-config metadata with Optional Header
-and relocation evidence for ASLR, high-entropy ASLR, DEP/NX, CFG, stack cookies,
-SafeSEH applicability, Return Flow Guard, EH continuation protection, XFG,
-retpoline, code integrity, and AppContainer. Findings distinguish “present,”
-“declared,” “not indicated,” and inconsistent/partial evidence; static metadata
-is never presented as proof of effective runtime policy.
-
-Its nested CFG evidence view correlates the Optional Header `GUARD_CF` bit with
-`CF_INSTRUMENTED`, `CFW_INSTRUMENTED`, and `CF_FUNCTION_TABLE_PRESENT`; maps the
-check/dispatch pointer slots and `GuardCFFunctionTable`; and safely parses the
-complete bounded GFIDS target table. It derives the `4 + n` record stride from
-the high `GuardFlags` nibble, maps every target RVA to its VA and file offset,
-decodes suppressed/export-suppressed metadata, verifies strict ordering and
-uniqueness, and reports partial, truncated, unmapped, or contradictory evidence.
-
-The Authenticode certificates & signatures branch treats the Security Directory
-address correctly as a file offset, walks every quadword-aligned
-`WIN_CERTIFICATE`, and decodes revision/type fields, PKCS#7 signer records,
-signing and countersignature times, nested-signature counts, and embedded X.509
-certificate subjects, issuers, serials, validity periods, fingerprints,
-algorithms, and CA status. For Authenticode SignedData it extracts the embedded
-SPC digest, independently calculates the PE image digest while excluding the
-checksum and certificate metadata, and reports match/mismatch/unavailable as
-separate evidence. It also verifies each signer's signed-content digest and
-supported RSA/ECDSA/DSA PKCS#7 signature using the matched embedded certificate.
-These cryptographic checks are explicitly not presented as Windows root trust,
-revocation, or timestamp-authority validation. Every complete `bCertificate`
-blob can be opened in the bounded viewer or safely exported without overwrite.
-
-The Rich header branch searches only the bounded DOS-stub region before the PE
-signature, verifies the XOR-decoded `DanS` marker and padding, preserves the raw
-XOR key/checksum, and decodes each product ID, build number, and use count. Rich
-metadata is explicitly presented as a compiler/linker clue: it is undocumented,
-may be absent, and can be copied or forged, so it is not treated as attribution.
-
-The Debug data & CodeView branch parses each 28-byte
-`IMAGE_DEBUG_DIRECTORY` record with its characteristics, timestamp, version,
-type, declared payload size, payload RVA, and payload file offset. Complete
-payloads receive a SHA-256 digest and can be opened in the paged viewer or
-exported safely. For CodeView `RSDS` records, AIDebug decodes the PDB signature
-GUID using Windows GUID byte order, the PDB age, and the bounded, untrusted PDB
-path; legacy `NB10` records expose their age and path as well. Malformed,
-unmapped, unterminated, oversized, and truncated records remain visible with
-explicit warnings instead of being silently accepted.
-
-Overlay evidence now includes the exact file offset and size, SHA-256, entropy,
-and a bounded preview. Press `Enter` to inspect every trailing byte or `D` to
-export the exact range under `./aidebug-overlay-exports/<sample-hash>/` with
-owner-only permissions and no overwrite. An overlay may be a certificate table,
-installer payload, configuration, or malicious content; its presence alone is
-not classified as malicious.
-
-The `.NET / CLR assembly` branch recognizes the Optional Header COM Descriptor
-and parses the complete bounded `IMAGE_COR20_HEADER`: runtime version, CLR
-flags, managed-token or native-RVA entry point, metadata, managed resources,
-strong-name signature, code-manager table, VTable fixups, export jumps, and
-managed-native-header directories. It decodes `ILONLY`, 32-bit-required/
-preferred, IL-library, strong-name-signed, native-entry-point, and debug-tracking
-flags while preserving unknown bits.
-
-AIDebug validates the `BSJB` metadata root and enumerates `#~`/`#-`, `#Strings`,
-`#US`, `#GUID`, `#Blob`, `#Pdb`, and nonstandard streams with exact offsets,
-sizes, completeness, SHA-256, and bounded previews. The tables stream exposes
-every present ECMA-335 table with row count, calculated row size, and file
-offset. Module and Assembly rows provide the managed module name, assembly
-name/version/culture/flags/hash algorithm; AssemblyRef rows become navigable
-dependency records. Complete stream bytes open with `Enter` and export with `D`
-under `./aidebug-dotnet-exports/<sample-hash>/`. Strong-name presence is shown
-as identity/integrity metadata, not publisher trust, and declared dependencies
-are not presented as proof of runtime loading. The CLR is never initialized and
-no managed code executes.
-
-The Import descriptors tab
-shows every standard 20-byte `IMAGE_IMPORT_DESCRIPTOR`, including INT and IAT
-RVAs, timestamp, forwarder chain, DLL-name RVA, file offset, and confirmed
-all-zero terminator evidence. The same paged workspace shows complete 32-byte
-`IMAGE_DELAYLOAD_DESCRIPTOR` records, distinguishes RVA-based and legacy
-VA-based forms, preserves reserved attribute bits, and confirms the all-zero
-terminator. Imports include normal and delay-loaded function entries; exports
-include ordinals and forwarders. Overlay offset and size are reported when
-extra data follows the mapped image. `P` remains an additional shortcut for
-analysts accustomed to opening PE Structure directly.
-
-The Hex tab covers every byte of the exact file content AIDebug hashed. It uses
-4 KiB pages instead of creating one unbounded terminal document: use
-`PageUp`/`PageDown` to move, and `Home`/`End` to jump to the first or last page.
-Imports and exports are likewise paged for responsive navigation. Press
-`Escape` to return to function analysis. This workspace is offline and
-read-only: it does not execute the PE or reopen its source path.
-
-Add bounded Ghidra decompiler output to the CLI, TUI, HTML, and JSON with
-`--decompile`. Install Ghidra first, or provide its headless launcher explicitly:
+Run deterministic analysis without the full-screen UI and export evidence:
 
 ```bash
-aidebug --binary /path/to/sample.elf --offline --no-tui --decompile
-aidebug --binary /path/to/sample.exe --offline --no-tui --decompile \
-  --ghidra-headless /opt/ghidra/support/analyzeHeadless
+aidebug --binary /path/to/sample.exe \
+  --offline --no-tui --report --json-export --yara \
+  --out-dir reports/
 ```
 
-Reconstruct every discovered function into one file:
+Use Ghidra reconstruction:
 
 ```bash
-aidebug --binary /path/to/sample.elf --offline --no-tui \
-  --decompile-all case/sample-full.c
+aidebug --binary /path/to/sample.exe --offline --no-tui --decompile
+aidebug --binary /path/to/sample.exe --offline --no-tui \
+  --decompile-all reports/sample-reconstruction.c
 ```
 
-The destination must not already exist. The combined file is created with
-owner-only permissions and begins with input hash, architecture, backend, and
-non-original-source warnings. Discovery remains bounded to 300 functions; “all”
-means every function AIDebug discovered within that explicit safety ceiling.
-
-AIDebug discovers `analyzeHeadless` from `PATH`, common installation locations,
-or `AIDEBUG_GHIDRA_HEADLESS`. It runs one isolated temporary Ghidra project and
-uses Ghidra's native-code decompiler. The C-like result is reconstructed output,
-not original source: inferred types, names, expressions, and structure still
-require analyst review. AIDebug fails clearly when Ghidra is unavailable; it
-does not substitute register-to-text heuristics and call that decompilation.
-
-When remote AI is enabled and a function has Ghidra output, the same bounded AI
-request compares that reconstruction with the supplied disassembly, calls,
-strings, patterns, and optional runtime state. The result is labelled
-`CONSISTENT`, `PARTIAL`, or `CONTRADICTED` with confidence and evidence. This is
-an LLM cross-check, not proof of source correctness. Offline mode reports that
-the available reconstruction was not remotely cross-checked.
-
-### Active local ELF debugging
-
-GDB-backed active mode executes the selected program. Use it only inside an
-isolated analysis VM:
+Analyze one C translation unit through a temporary, non-executed ELF artifact:
 
 ```bash
-aidebug --binary ./sample.elf --mode debug --breakpoint main
+aidebug --source /path/to/example.c --offline --no-tui
 ```
 
-Available commands are `break LOCATION`, `continue`, `step`, `next`, `finish`,
-`registers`, `changes`, `io`, `disassemble`, and `quit`. `step` and `next` operate
-at instruction granularity. `io` reports calling-convention register candidates
-and a GDB return value or explicitly labelled ABI return-register candidate.
-Use repeatable `--debug-arg` values for target arguments and repeatable
-`--debug-command` values for non-interactive lab automation. Active mode
-currently supports local ELF targets; use Frida dynamic mode for remote or
-Windows targets. GDB is a system dependency rather than a Python package.
-
-### Learning mode
-
-Learning Mode is integrated into AIDebug's original full-screen GUI. It is not
-a simulated instruction viewer: every lesson is backed by a standalone C file,
-a real temporary x86-64 ELF build, complete symbol disassembly, and Ghidra
-pseudo-code recovered from that build.
-
-Learning Mode runs locally, does not open the session database, never sends
-content to an AI provider, and never executes the compiled lesson artifact.
-
-#### Launch the GUI
-
-Open the complete 100-case catalog:
-
-```bash
-aidebug --learn
-```
-
-Open the full catalog and immediately analyze a specific case:
-
-```bash
-aidebug --learn mov-load
-aidebug --learn lea-arithmetic
-aidebug --learn movsxd
-aidebug --learn xchg
-aidebug --learn subtract
-aidebug --learn binary-search
-```
-
-Search by title, category, instruction, or concept to open a filtered catalog:
-
-```bash
-aidebug --learn "data movement"
-aidebug --learn "loops and arrays"
-```
-
-An exact lesson ID keeps the entire catalog available and preselects that case.
-A broader search opens only matching cases.
-
-#### Main GUI layout
-
-| GUI area | Evidence shown |
-|---|---|
-| Learning Cases | Search result or all 100 standalone cases, with ID, category, and lesson title |
-| Real Disassembly | Actual function address, instruction bytes, and compiler-generated assembly |
-| Original C Source | Exact contents and repository path of the selected lesson file |
-| Pseudo-code tab | Ghidra's independent C-like reconstruction from the generated ELF |
-| Lesson tab | Meaning, register/flag effects, analyst clue, and common misreading |
-| Build Evidence tab | Function, ELF address, compiler identity, artifact SHA-256, and execution-safety statement |
-| Help tab | The live learning workflow and interpretation caveats |
-
-#### Controls
-
-| Key | Action |
-|---|---|
-| Arrow keys | Navigate the focused case table or scroll the focused evidence pane |
-| Enter | Compile and analyze the selected case |
-| Tab / Shift+Tab | Move focus between GUI controls |
-| R | Recompile and reanalyze the current case |
-| Q | Quit Learning Mode |
-
-Analyzed results are cached only for the current GUI session. Returning to a
-case reloads its cached result; press `R` when you want fresh compiler and
-Ghidra output.
-
-#### External collections
-
-Open a directory of standalone external C lessons in the same GUI:
-
-```bash
-aidebug --learn --learning-collection /path/to/my-cases
-aidebug --learn external-add --learning-collection /path/to/my-cases
-```
-
-The directory must contain `case_common.h` and one or more `.c` files. Each
-file ID such as `external-add.c` must define a matching public function such as
-`learn_external_add(...)`. An optional `collection.json` controls ordering and
-lesson metadata; [`learning/cases/`](learning/cases/) is a complete 100-case
-reference collection that can also be loaded externally:
-
-```bash
-aidebug --learn --learning-collection ./learning/cases
-```
-
-AIDebug rejects absolute or escaping manifest paths, duplicate/invalid IDs,
-oversized files, non-UTF-8 input, and missing expected symbols. The generated
-ELF is never executed, but the local compiler still parses the supplied source;
-review external collections before loading them.
-
-#### Evidence pipeline and safety
-
-Every lesson is a separate file under [`learning/cases/`](learning/cases/).
-When a case is selected, AIDebug:
-
-1. copies only that bundled C file and `case_common.h` to a temporary directory;
-2. compiles it into an x86-64 ELF shared object without running it;
-3. resolves the lesson's real symbol and size;
-4. decodes the complete compiler-generated function, including addresses and
-   instruction bytes;
-5. asks the same Ghidra backend used by normal analysis to reconstruct
-   pseudo-code from the machine code; and
-6. removes the temporary build directory when analysis finishes.
-
-The panes show the exact source-file path and contents, compiler identity,
-artifact SHA-256, symbol address, real assembly, Ghidra output, and the
-non-original-source warning. There is no handwritten pseudo-code fallback.
-Compiler versions and optimization behavior may produce different valid
-instruction sequences, so always compare pseudo-code with the displayed source
-and assembly.
-
-#### Text-only mode
-
-For terminal output, scripts, or CI, add `--no-tui`:
-
-```bash
-aidebug --learn --no-tui
-aidebug --learn movsxd --no-tui
-```
-
-Without a topic, text mode prints the catalog. An exact lesson ID compiles and
-analyzes that one case. A broader query prints matching catalog entries.
-
-#### Requirements and toolchain overrides
-
-Live cases require:
-
-- an x86-64 ELF-capable `cc`, `gcc`, or `clang`;
-- Ghidra's `analyzeHeadless`; and
-- a terminal supported by Textual for the full-screen interface.
-
-Override compiler or Ghidra discovery when necessary:
-
-```bash
-aidebug --learn switch-dispatch \
-  --learning-compiler /usr/bin/gcc \
-  --ghidra-headless /opt/ghidra/support/analyzeHeadless
-```
-
-C source analysis requires an ELF-capable `cc`, `gcc`, or `clang` plus
-Bubblewrap (`bwrap`). AIDebug copies the selected translation unit into a
-filesystem-isolated build directory, compiles a temporary ELF shared object,
-analyzes it, and deletes it without execution:
-
-```bash
-aidebug --source /path/to/sample.c --offline --no-tui
-```
-
-On Ubuntu 24.04, AppArmor may block Bubblewrap with `setting up uid map:
-Permission denied` when the system lacks a Bubblewrap user-namespace profile.
-Install and load the upstream `bwrap-userns-restrict` AppArmor profile rather
-than disabling `kernel.apparmor_restrict_unprivileged_userns` globally. See the
-[Ubuntu 24.04 user-namespace guidance](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions).
-
-The C workflow accepts one `.c` translation unit up to 2 MiB. System headers
-are available, but project-local headers and multi-file builds are not yet
-supported. Dynamic mode and YARA generation are deliberately unavailable for
-source inputs because their evidence comes from a temporary compiled surrogate.
-
-The base source installation supports deterministic offline analysis. After the
-next release, the PyPI distribution remains `1200km-aidebug` and the command is
-`aidebug`.
-
-AI-assisted analysis is an optional extra with four provider paths: Anthropic,
-OpenAI, Google Gemini, and a local Ollama server. Install the adapters and make
-a private configuration file:
-
-```bash
-pip install -e ".[ai]"
-cp .env.example .env
-chmod 600 .env
-```
-
-Keep `AIDEBUG_LLM_PROVIDER=auto` and uncomment exactly one credential in
-`.env`. AIDebug selects the only configured provider:
-
-```dotenv
-# Anthropic
-ANTHROPIC_API_KEY=replace_with_your_key
-
-# OpenAI
-# OPENAI_API_KEY=replace_with_your_key
-
-# Google Gemini
-# GEMINI_API_KEY=replace_with_your_key
-
-# Local Ollama (no cloud API key)
-# OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
-```
-
-Then start AIDebug normally:
-
-```bash
-aidebug --binary /path/to/sample
-```
-
-Do not paste API keys into screenshots, shell history, issue reports, or chat.
-Revoke an exposed key in the Anthropic Console before creating a replacement.
-The `.env` file is ignored by Git; `.env.example` contains placeholders only.
-Operating-system environment variables override `.env`. When more than one
-credential is configured, set `AIDEBUG_LLM_PROVIDER` explicitly to
-`anthropic`, `openai`, `gemini`, or `ollama` so evidence is never silently sent
-to the wrong backend.
-
-Provider defaults are `claude-opus-4-8`, `gpt-5.6-terra`,
-`gemini-3.6-flash`, and `qwen3:8b` respectively. Override only the selected
-provider with `AIDEBUG_ANTHROPIC_MODEL`, `AIDEBUG_OPENAI_MODEL`,
-`AIDEBUG_GEMINI_MODEL`, or `AIDEBUG_OLLAMA_MODEL`. The legacy
-`AIDEBUG_AI_MODEL` variable remains a global override.
-
-For Ollama, pull and serve the configured model before starting AIDebug:
-
-```bash
-ollama pull qwen3:8b
-ollama serve
-```
-
-Ollama evidence stays on the configured local endpoint and does not require
-`--accept-ai-cost`; remote bulk analysis still requires that acknowledgement.
-Use `AIDEBUG_ENV_FILE=/absolute/path/to/private.env` when the configuration is
-stored outside the repository. AIDebug deliberately does not auto-load `.env`
-from the current working directory because malware-analysis directories are
-untrusted.
-
-The `ai` extra includes both the Anthropic SDK and `yara-python`: remote YARA
-candidates are accepted only after local compilation and broad-rule probes.
-
-Bulk CLI/report analysis with the remote provider also requires the explicit
-`--accept-ai-cost` acknowledgement. Review the [remote data
-boundary](docs/safety-model.md#remote-ai-data-boundary) first.
-
-Dynamic Frida instrumentation is optional:
-
-```bash
-pip install -e ".[dynamic]"
-```
-
-Install both optional capabilities from the checkout with `pip install -e
-".[all]"`.
-
-### Session storage
-
-The default SQLite database is
-`$XDG_STATE_HOME/aidebug/traces.db` (normally
-`~/.local/state/aidebug/traces.db`) on Linux and below `%LOCALAPPDATA%` on
-Windows. Override it per case with `--db /controlled/path/session.db` or
-`AIDEBUG_DB_PATH`. Existing repository-local `traces.db` files are not migrated
-automatically.
-
-Every analysis session records the sample SHA-256, mode, analyzer, lifecycle
-status, function findings, decompilation, deterministic patterns, and bounded
-runtime evidence. When the same bytes are opened again—even from a different
-filename or path—AIDebug finds prior sessions by SHA-256. The main GUI adds a
-`History` tab, and compatible stored function analyses are restored without a
-second remote-AI request. Separate sessions are retained so a later run never
-silently overwrites earlier evidence.
-
-Query the database with either the sample file or its full SHA-256:
+Inspect prior analysis by file or SHA-256:
 
 ```bash
 aidebug --history /path/to/sample.exe
 aidebug --history 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-The history view lists previous session metadata, evidence counts, risk counts,
-and stored AI function summaries. Use the displayed session ID to export every
-persisted field:
+## PE Structure Workspace
+
+Load a PE file and press `X` (or `P`) in the main GUI. AIDebug presents the
+exact bytes it hashed and organizes structural evidence into bounded,
+navigable views.
+
+| Area | Evidence |
+|---|---|
+| Headers | DOS, NT, COFF, Optional Header, characteristics, data directories, and mitigation flags |
+| Sections | Complete `IMAGE_SECTION_HEADER` fields, mapped ranges, entropy, and permissions |
+| Imports and exports | Import descriptors, INT/IAT entries, delay imports, ordinals, names, RVAs, and forwarders |
+| Resources | Type/name/language hierarchy, metadata, hashes, previews, and safe no-overwrite export |
+| Relocations and ASLR | Relocation blocks/entries and structural ASLR compatibility assessment |
+| TLS | TLS directory, template data, index, callback table, mappings, and termination evidence |
+| Exceptions and unwind | x64 runtime functions, `UNWIND_INFO`, operations, handlers, and chained records |
+| Load configuration | Versioned fields, Guard flags, stack-cookie and exploit-mitigation evidence |
+| CFG | Check/dispatch pointers, Guard Function ID targets, ordering, suppression, and consistency checks |
+| Authenticode | Certificate records, PKCS#7/X.509 evidence, PE image digest comparison, and signer verification |
+| Debug and provenance | Rich header, Debug Directory, CodeView RSDS/NB10, PDB GUID, age, and path |
+| Overlays | Exact offset, size, hash, entropy, preview, and safe export |
+| .NET / CLR | COR20 header, metadata root and streams, ECMA-335 tables, assemblies, references, and resources |
+
+AIDebug does not execute a PE while building these views. Static certificate
+verification is not Windows root trust or revocation validation, Rich metadata
+is not attribution, strong-name metadata is not publisher trust, and static
+mitigation flags are not proof of effective runtime policy.
+
+## Published Guides
+
+These articles provide the long-form workflows and screenshots that complement
+the repository documentation:
+
+- [PE File Structure for Malware Analysis: A Practical Guide](https://1200km.com/articles/read/2026/2026-08-10-pe-file-structure-for-malware-analysis-d93acb97d9f3/) — PE layout, loader behavior, headers, sections, imports, exports, resources, relocations, TLS, mitigations, signatures, overlays, and .NET metadata with AIDebug.
+- [Assembly for Malware Analysis: A Practical x86/x64 Guide](https://1200km.com/articles/read/2026/2026-08-09-assembly-for-malware-analysis-be0679241940/) — registers, flags, calling conventions, control flow, Windows APIs, and hands-on AIDebug learning cases.
+- [AI-Powered Malware Debugger That Explains Every Function It Sees](https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a) — the original AIDebug project walkthrough.
+
+## Learning Mode
+
+Open the complete catalog or start with a specific case:
 
 ```bash
-aidebug --session 7 --json-export --out-dir reports/
+aidebug --learn
+aidebug --learn mov-load
+aidebug --learn lea-arithmetic
+aidebug --learn switch-dispatch
 ```
 
-In the main GUI, press `Ctrl+H` to open hash-matched history. The database and
-exports can contain sensitive sample evidence; protect them as case data.
+Each bundled case is a standalone file under [`learning/cases/`](learning/cases/).
+AIDebug compiles the selected case into a temporary x86-64 ELF, shows the exact
+C source and compiler-generated instructions, asks Ghidra for an independent
+reconstruction, records build provenance, and removes the temporary artifact.
+The generated lesson binary is never executed.
 
-### Source checkout with all optional capabilities
+Use `--no-tui` for text output, or load a reviewed external collection:
 
 ```bash
-git clone https://github.com/anpa1200/AIDebug.git
-cd AIDebug
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[all]"
-aidebug --binary /path/to/sample --offline --no-tui --report --json-export --out-dir reports/
+aidebug --learn movsxd --no-tui
+aidebug --learn --learning-collection /path/to/reviewed-cases
 ```
 
-## Safe Examples
+## AI Providers
 
-The [`examples/`](examples/) directory contains safe, non-malicious demo
-material:
+AI analysis is optional. Deterministic offline mode remains available without
+credentials.
 
-- [`examples/toy_xor_config.py`](examples/toy_xor_config.py) - a benign toy XOR
-  loop for documentation.
-- [`examples/toy_c_analysis.c`](examples/toy_c_analysis.c) - a benign C fixture
-  for sandboxed temporary-ELF analysis.
-- [`learning/cases/`](learning/cases/) - 100 benign, standalone C functions used
-  by the real Learning Mode compile/disassemble/decompile pipeline.
-- [`examples/mock-output/aidebug-session.json`](examples/mock-output/aidebug-session.json)
-  - hand-authored schema-v2 offline session example with an all-zero mock hash.
-- [`examples/mock-output/aidebug-candidate.yar`](examples/mock-output/aidebug-candidate.yar)
-  - illustrative analyst-review YARA seed.
-- [`examples/mock-output/aidebug-report.html`](examples/mock-output/aidebug-report.html)
-  - compact illustrative HTML fragment, not a full current generated report.
+```bash
+python -m pip install "1200km-aidebug[ai]==3.0.0"
+cp .env.example .env
+chmod 600 .env
+```
 
-These examples are not live malware and are intended for documentation, parser
-tests, and integration demos. They are not execution or accuracy evidence.
+Configure exactly one provider, or set `AIDEBUG_LLM_PROVIDER` explicitly when
+several credentials exist:
+
+```dotenv
+AIDEBUG_LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=replace_with_your_key
+
+# Alternatives:
+# OPENAI_API_KEY=replace_with_your_key
+# GEMINI_API_KEY=replace_with_your_key
+# OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+```
+
+Use `AIDEBUG_ENV_FILE=/absolute/path/to/private.env` to keep configuration away
+from untrusted analysis directories. Remote bulk analysis requires the explicit
+`--accept-ai-cost` acknowledgement. Review the [remote-AI data boundary](docs/safety-model.md#remote-ai-data-boundary)
+before sending sample evidence to any provider.
+
+## Active ELF Debugging
+
+GDB-backed active mode executes the selected local ELF. Use it only inside an
+isolated, authorized lab:
+
+```bash
+aidebug --binary ./sample.elf --mode debug --breakpoint main
+```
+
+Available commands include `break`, `continue`, `step`, `next`, `finish`,
+`registers`, `changes`, `io`, `disassemble`, and `quit`. Frida dynamic mode is
+available separately for supported local or remote instrumentation workflows.
+
+## Outputs
+
+| Output | Intended use |
+|---|---|
+| HTML report | Human review and case notes |
+| Versioned JSON | Custom integration input; not a vendor-native or STIX schema |
+| YARA candidates | Locally compiled detection-engineering seeds requiring review and testing |
+| ATT&CK candidates | Technique-level hypotheses requiring analyst validation |
+| CFG visualization | Function-level control-flow review |
+| SQLite history | Local session evidence and SHA-256-based finding restoration |
 
 ## How It Works
 
 ```mermaid
 flowchart LR
-  Sample[PE/ELF sample] --> Parse[PE/ELF parsing]
-  Parse --> HexView[Read-only whole-file hex]
-  Parse --> PEView[Automatic full PE structure presentation]
-  Source[C source] --> Compile[Sandboxed temporary ELF compilation]
-  Compile --> Parse
-  Lesson[Selected learning/cases/*.c] --> LearnCompile[Temporary non-executed x86-64 ELF]
-  LearnCompile --> LearnDisasm[Real instruction bytes]
-  LearnCompile --> LearnGhidra[Ghidra pseudo-code]
-  LearnDisasm --> LearnGUI[Main-GUI Learning Mode]
-  LearnGhidra --> LearnGUI
+  Input[PE, ELF, or C source] --> Parse[Bounded parsing and hashing]
+  Parse --> Structure[Hex and PE structure evidence]
   Parse --> Disasm[Capstone disassembly]
+  Disasm --> Patterns[Deterministic patterns]
   Disasm --> Ghidra[Ghidra reconstruction]
-  Disasm --> Patterns[Malware pattern detection]
-  Patterns --> Offline[Offline evidence summary]
-  Patterns --> Remote[Optional remote AI hypothesis]
-  Ghidra --> Remote
-  Remote --> Attack[ATT&CK candidate]
-  Offline --> Report[HTML/JSON/YARA candidates]
-  Attack --> Report
+  Patterns --> Offline[Offline findings]
+  Patterns --> AI[Optional LLM cross-check]
+  Ghidra --> AI
+  Offline --> Reports[HTML, JSON, YARA, CFG]
+  AI --> Reports
+  Reports --> History[SHA-256-indexed history]
 ```
 
-## How AIDebug Feeds Detection Engineering
+## Safety and Scope
 
-AIDebug records function-level evidence, produces deterministic pattern summaries
-offline, and can ask a remote model for explanations and ATT&CK candidates. JSON
-contains heuristic strings from higher-risk functions for analyst review. It is
-not STIX, an OpenCTI connector, a vendor-native SIEM integration, or final truth.
+Use AIDebug only on software and systems you are authorized to examine, inside
+an isolated malware-analysis VM or lab.
 
-## Coverage
+- Static analysis does not execute the inspected PE or ELF.
+- C inputs and learning cases are compiled to temporary artifacts that are not
+  executed by their analysis workflows.
+- GDB active mode launches a local ELF; Frida mode instruments a running target.
+- Outputs are bounded evidence and hypotheses, not automatic attribution or
+  final detection truth.
+- Session databases and exports can contain sensitive evidence and are not
+  encrypted by AIDebug.
+- Ghidra output is reconstructed C-like code, not recovered original source.
 
-| Area | Coverage |
+Read the complete [safety model](docs/safety-model.md), [security policy](SECURITY.md),
+and [limitations and validation plan](docs/validation-plan.md) before analyzing
+untrusted samples.
+
+## Documentation
+
+| Document | Purpose |
 |---|---|
-| Malware patterns | XOR loops, stack strings, API hashing, RDTSC timing, direct syscalls, NOP sleds, null-safe XOR, Base64 tables |
-| Formats | PE32, PE64, ELF, and one-file C source compiled to a temporary ELF |
-| File inspection | Main-GUI whole-file hex for loaded binaries; PE files add DOS/NT/optional headers, sections, data directories, imports/delay imports, exports/forwarders, and overlays |
-| Architectures | Parser/disassembler paths for x86, x86-64, ARM, AArch64, and RISC-V; coverage varies by format and fixture |
-| Dynamic mode | Optional local/remote Frida hooks with readiness/error reporting; operator-managed sandbox/network controls |
-| Active debug | Local ELF execution through GDB/MI with analyst-controlled breakpoints and instruction stepping |
-| Learning | 100 bundled or externally loaded x86-64 source cases in the main GUI, with exact C, real assembly, build evidence, and Ghidra output |
-| Reports | HTML, versioned AIDebug JSON, and YARA candidates |
+| [Analyst workflow](docs/analyst-workflow.md) | Repeatable analysis process |
+| [Safety model](docs/safety-model.md) | Trust boundaries and safe operation |
+| [Validation plan](docs/validation-plan.md) | Testable capability claims |
+| [Sample evidence](docs/sample-evidence.md) | Illustrative screenshots and mock artifacts |
+| [Comparison](docs/comparison.md) | Scope and positioning |
+| [Release readiness](docs/release-readiness.md) | Reproducible release gates |
+| [AIDebug 3.0 release notes](docs/release-notes/v3.0.0.md) | Current release changes |
+| [Changelog](CHANGELOG.md) | Version history |
 
-## Safety
+## Development
 
-Use AIDebug only in an isolated malware-analysis VM or lab. Do not run unknown
-samples on your host OS. Static analysis can inspect PE/ELF files directly.
-C inputs are compiled inside a Bubblewrap filesystem sandbox and the generated
-ELF is never executed. Dynamic mode attaches Frida to a running process or
-sandbox; active debug mode launches a local ELF through GDB. Both dynamic paths
-should be used only with authorization and isolation.
+Run the fast local checks:
 
-## Limitations And Honesty
+```bash
+python -m ruff check .
+python -m pytest -q
+```
 
-AIDebug accelerates triage. It does not replace manual reverse engineering,
-sandbox validation, or analyst judgment. Discovery is bounded and can miss
-indirect, packed, overlaid, stripped, or unreachable code. Heuristic library
-identification can collide. ATT&CK, risk, IOC, and YARA outputs require review.
-Dynamic static-to-runtime address mapping can be incomplete under ASLR/PIE.
-The optional Ghidra integration produces bounded C-like reconstruction from
-machine code. It is compiler-grade decompiler output, but it is still not
-recovered original source and must be checked against disassembly and behavior.
-An LLM cross-check can identify inconsistencies in the bounded evidence it
-receives, but it cannot prove semantic equivalence or repair missing discovery
-coverage.
-Tracer startup reports whether each observer is ready and how many hooks are
-installed at that moment; a zero count can increase when a watched module loads
-later and is not evidence that any target call was captured.
+Run the complete isolated release gate:
 
-Session databases and exports can contain sensitive sample and runtime evidence
-and are not encrypted by AIDebug. See the [safety and privacy
-model](docs/safety-model.md).
+```bash
+./scripts/release-readiness.sh
+```
 
-Current protective defaults reject binary samples above 128 MiB and C source
-above 2 MiB, cap C compilation at 30 seconds, cap discovery at 300
-functions and 250 instructions per function, scan at most 100,000 symbols, cap
-stored import/export candidates at 50,000 each, cap dynamic instrumentation at 50
-function hooks, cap one YARA ruleset at the requested `--max-functions` value,
-and cap persisted API, network, and runtime records at 10,000 per category per
-session. These are resource guards, not coverage or retention guarantees.
-Generated filenames include the session ID so separate analyses of identically
-named samples do not silently overwrite one another in the same output folder.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance. Do not attach
+live malware, credentials, private case data, or unredacted evidence to issues
+or pull requests.
 
-## Companion Article
+## Project
 
-https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
-
-## Community
-
-- Use GitHub Issues for reproducible bugs and feature requests.
-- Use GitHub Discussions for workflow questions, integration ideas, and analyst
-  usage patterns.
-- Do not upload live malware samples to issues or discussions.
-
-## Discovery And Launch Material
-
-Use [`DISCOVERY.md`](DISCOVERY.md) for canonical links, platform-specific launch
-copy, newsletter pitch text, and current external submission tracking.
-
-## Citation
-
-See `CITATION.cff`.
+- [Releases](https://github.com/anpa1200/AIDebug/releases)
+- [PyPI](https://pypi.org/project/1200km-aidebug/)
+- [Issues](https://github.com/anpa1200/AIDebug/issues)
+- [Discussions](https://github.com/anpa1200/AIDebug/discussions)
+- [Security policy](SECURITY.md)
+- [Citation metadata](CITATION.cff)
+- [1200km security research ecosystem](https://1200km.com/)
 
 ## License
 
-[MIT](LICENSE).
-
-## Security Policy
-
-See `SECURITY.md`.
-
-## 1200km Ecosystem
-
-This project is part of the 1200km security research ecosystem. Use [AdversaryGraph](https://1200km.com/adversarygraph/) for CTI-to-detection workflows, ATT&CK/ATLAS mapping, actor relevance, IOC enrichment, and analyst-ready reporting.
-
-- [AdversaryGraph project hub](https://1200km.com/adversarygraph/)
-- [AdversaryGraph documentation](https://1200km.com/adversarygraph-docs/)
-- [Live ATT&CK/ATLAS workspace](https://1200km.com/threat-matrix/)
-- [1200km security research ecosystem](https://1200km.com/)
+AIDebug is released under the [MIT License](LICENSE).
