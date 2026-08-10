@@ -236,14 +236,16 @@ def test_yara_writes_an_empty_ruleset_without_api_or_targets(tmp_path):
 
 
 def test_yara_client_uses_the_configured_request_timeout(monkeypatch):
+    import analysis.ai_analyzer as ai_analyzer
+
     constructor_arguments = {}
 
     def build_client(**kwargs):
         constructor_arguments.update(kwargs)
         return object()
 
-    monkeypatch.setitem(
-        sys.modules,
+    monkeypatch.setattr(
+        ai_analyzer,
         "anthropic",
         SimpleNamespace(Anthropic=build_client),
     )

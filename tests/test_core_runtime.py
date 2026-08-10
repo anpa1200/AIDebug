@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 import config
-from analysis.ai_analyzer import AIAnalysis, AIAnalyzer, OfflineAnalyzer
+from analysis.ai_analyzer import AIAnalysis, AIAnalyzer, AIAnalyzerError, OfflineAnalyzer
 from analysis.cfg import CFGBuilder
 from analysis.disassembler import Disassembler, Function, Instruction, _capstone_params
 from analysis.flirt import FlirtMatcher, _function_fingerprint
@@ -70,6 +70,37 @@ class FakeMessages:
 class FakeClient:
     def __init__(self, responses):
         self.messages = FakeMessages(responses)
+
+
+class FailingMessages:
+    def __init__(self, exc):
+        self.exc = exc
+
+    def create(self, **kwargs):
+        raise self.exc
+
+
+class FailingClient:
+    def __init__(self, exc):
+        self.messages = FailingMessages(exc)
+
+
+class FakeChatCompletions:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        text = next(self.responses)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
+        )
+
+
+class FakeOpenAIClient:
+    def __init__(self, responses):
+        self.chat = SimpleNamespace(completions=FakeChatCompletions(responses))
 
 
 def test_static_analyzer_rejects_special_and_oversized_files(tmp_path, monkeypatch):
@@ -366,6 +397,91 @@ def test_invalid_ai_response_is_not_downgraded_to_low():
     }))
     assert wrong_schema.suggested_name == 'parse_error'
     assert wrong_schema.cache_key == ''
+
+
+@pytest.mark.parametrize(
+    ("error_name", "status_code", "expected"),
+    [
+        ("AuthenticationError", 401, "rejected ANTHROPIC_API_KEY"),
+        ("PermissionDeniedError", 403, "denied access"),
+        ("NotFoundError", 404, "could not find or grant access"),
+        ("RateLimitError", 429, "rate or spending limit"),
+        ("APIConnectionError", None, "connection failed"),
+    ],
+)
+def test_remote_ai_errors_are_actionable(error_name, status_code, expected):
+    error_type = type(error_name, (RuntimeError,), {})
+    exc = error_type("provider detail that must not be displayed")
+    if status_code is not None:
+        exc.status_code = status_code
+    analyzer = AIAnalyzer(client=FailingClient(exc))
+
+    with pytest.raises(AIAnalyzerError, match=expected) as raised:
+        analyzer._create_message("system", [{"role": "user", "content": "test"}], 32)
+
+    assert "provider detail" not in str(raised.value)
+
+
+def test_default_ai_model_is_documented_anthropic_id():
+    assert config.AI_MODEL == "claude-opus-4-8"
+
+
+def test_llm_provider_auto_selection_and_ambiguity(monkeypatch):
+    monkeypatch.setattr(config, "LLM_PROVIDER", "auto")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "openai-test")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "")
+
+    settings = config.resolve_llm_settings()
+    assert settings["provider"] == "openai"
+    assert settings["model"] == "gpt-5.6-terra"
+    assert settings["is_local"] is False
+
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "gemini-test")
+    with pytest.raises(ValueError, match="Multiple LLM providers"):
+        config.resolve_llm_settings()
+
+
+def test_local_ollama_provider_needs_no_api_key(monkeypatch):
+    monkeypatch.setattr(config, "LLM_PROVIDER", "auto")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+
+    settings = config.resolve_llm_settings()
+    assert settings == {
+        "provider": "ollama",
+        "model": "qwen3:8b",
+        "api_key": "ollama",
+        "key_name": None,
+        "base_url": "http://127.0.0.1:11434/v1",
+        "is_local": True,
+    }
+
+
+def test_openai_compatible_provider_uses_chat_completion_shape():
+    client = FakeOpenAIClient(["provider response"])
+    analyzer = AIAnalyzer(
+        client=client,
+        provider="gemini",
+        model="gemini-3.6-flash",
+    )
+
+    result = analyzer._create_message(
+        "system boundary",
+        [{"role": "user", "content": "artifact"}],
+        256,
+    )
+
+    assert result == "provider response"
+    call = client.chat.completions.calls[0]
+    assert call["model"] == "gemini-3.6-flash"
+    assert call["max_tokens"] == 256
+    assert call["messages"][0] == {"role": "system", "content": "system boundary"}
+    assert analyzer.transmits_evidence is True
+    assert analyzer.cache_key.startswith("gemini:gemini-3.6-flash:")
 
 
 def test_offline_import_and_analysis_work_without_anthropic():

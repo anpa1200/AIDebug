@@ -269,7 +269,7 @@ Screen {
 
         # Top toolbar with binary info
         analyzer_mode = getattr(self.ai_analyzer, "display_name", config.AI_MODEL)
-        if getattr(self.ai_analyzer, "remote_enabled", True):
+        if getattr(self.ai_analyzer, "transmits_evidence", True):
             analyzer_mode = f"{analyzer_mode} (selection transmits evidence)"
         toolbar_text = Text(
             f" {_display_text(info.filename, 240)}  |  {_display_text(info.file_format, 40)} "

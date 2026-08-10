@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 3.0.0 - 2026-08-10
+
+- Expanded the PE workspace with complete TLS directory and callback evidence,
+  x64 exception/runtime-function tables, decoded unwind information, load
+  configuration fields, and correlated exploit-mitigation assessments.
+- Added detailed Control Flow Guard evidence, including check/dispatch
+  pointers, Guard flags, and bounded Guard Function ID table parsing.
+- Added Authenticode certificate inspection and cryptographic verification,
+  Rich-header decoding, Debug Directory and CodeView records, and exact overlay
+  inspection/export with explicit evidence boundaries.
+- Added managed PE inspection for CLR headers, metadata streams, ECMA-335 table
+  layouts, assemblies, references, resources, and strong-name metadata without
+  initializing the CLR or executing managed code.
+- Added provider-explicit AI configuration for Anthropic, OpenAI, Google
+  Gemini, and local Ollama endpoints through a private environment file, with
+  fail-closed provider selection and bounded evidence handling.
+- Updated the main documentation with the published practical PE-file guide
+  and the complete AIDebug 3.0 workflow.
+
 ## 2.0.0 - 2026-08-09
 
 - Added the main-GUI Hex / PE workspace. Every loaded binary can be inspected

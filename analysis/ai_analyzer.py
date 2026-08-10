@@ -10,6 +10,11 @@ try:
 except ImportError:  # Deterministic/offline analysis remains available.
     anthropic = None
 
+try:
+    import openai
+except ImportError:  # OpenAI-compatible providers are optional.
+    openai = None
+
 import config
 
 from .disassembler import Function
@@ -129,23 +134,98 @@ class AIAnalyzer:
     remote_enabled = True
     display_name = 'Remote AI analysis'
     cache_key = config.AI_CACHE_KEY
+    transmits_evidence = True
 
-    def __init__(self, api_key: str = None, client=None):
-        key = api_key or config.ANTHROPIC_API_KEY
-        if client is None and not key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY is not set. Export it before running:\n"
-                "  export ANTHROPIC_API_KEY=sk-ant-..."
-            )
-        if client is None and anthropic is None:
-            raise AIAnalyzerError(
-                "Remote AI analysis is unavailable because the 'anthropic' package is not installed. "
-                "Install AIDebug with its AI dependencies or use offline analysis."
-            )
-        self.client = client or anthropic.Anthropic(
-            api_key=key,
-            timeout=config.AI_TIMEOUT_SECONDS,
+    def __init__(
+        self,
+        api_key: str = None,
+        client=None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+    ):
+        if client is not None or api_key is not None or provider is not None:
+            selected_provider = (provider or "anthropic").strip().lower()
+            provider_keys = {
+                "anthropic": config.ANTHROPIC_API_KEY,
+                "openai": config.OPENAI_API_KEY,
+                "gemini": config.GEMINI_API_KEY,
+                "ollama": "ollama",
+            }
+            settings = {
+                "provider": selected_provider,
+                "model": model or config.LLM_DEFAULT_MODELS[selected_provider],
+                "api_key": api_key or provider_keys[selected_provider] or "test-client",
+                "key_name": {
+                    "anthropic": "ANTHROPIC_API_KEY",
+                    "openai": "OPENAI_API_KEY",
+                    "gemini": "GEMINI_API_KEY",
+                    "ollama": None,
+                }[selected_provider],
+                "base_url": base_url or "",
+                "is_local": selected_provider == "ollama",
+            }
+        else:
+            settings = config.resolve_llm_settings()
+            if settings is None:
+                raise ValueError(
+                    "No LLM provider is configured. Add one key to AIDebug's .env, "
+                    "configure local Ollama, or use --offline."
+                )
+            settings = dict(settings)
+            if provider is not None:
+                settings["provider"] = provider.strip().lower()
+            if model is not None:
+                settings["model"] = model.strip()
+            if api_key is not None:
+                settings["api_key"] = api_key
+            if base_url is not None:
+                settings["base_url"] = base_url
+
+        self.provider = settings["provider"]
+        self.model = settings["model"]
+        self.key_name = settings.get("key_name")
+        self.base_url = settings.get("base_url", "")
+        self.transmits_evidence = not bool(settings.get("is_local"))
+        provider_names = {
+            "anthropic": "Anthropic Claude",
+            "openai": "OpenAI",
+            "gemini": "Google Gemini",
+            "ollama": "Local Ollama",
+        }
+        self.display_name = f"{provider_names.get(self.provider, self.provider)} / {self.model}"
+        self.cache_key = (
+            f"{self.provider}:{self.model}:prompt-v{config.AI_PROMPT_SCHEMA_VERSION}"
         )
+
+        if client is not None:
+            self.client = client
+        elif self.provider == "anthropic":
+            if anthropic is None:
+                raise AIAnalyzerError(
+                    "Anthropic support requires the 'anthropic' package. "
+                    "Install AIDebug with .[ai] or use --offline."
+                )
+            self.client = anthropic.Anthropic(
+                api_key=settings["api_key"],
+                timeout=config.AI_TIMEOUT_SECONDS,
+            )
+        elif self.provider in {"openai", "gemini", "ollama"}:
+            if openai is None:
+                raise AIAnalyzerError(
+                    f"{provider_names[self.provider]} support requires the 'openai' package. "
+                    "Install AIDebug with .[ai] or use --offline."
+                )
+            kwargs = {
+                "api_key": settings["api_key"],
+                "timeout": config.AI_TIMEOUT_SECONDS,
+            }
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self.client = openai.OpenAI(**kwargs)
+        else:
+            raise ValueError(f"Unsupported LLM provider: {self.provider!r}")
         self._histories: dict[str, list] = {}
         # The SDK client and a single context's history must not be mutated by
         # concurrent Textual/Frida worker callbacks.
@@ -180,7 +260,7 @@ class AIAnalyzer:
                 decompilation_review=self._default_decompilation_review(
                     available=bool(getattr(function, 'decompiled_code', '')),
                 ),
-                cache_key=config.AI_CACHE_KEY,
+                cache_key=self.cache_key,
             )
             self.seed_context(function, binary_info, analysis, snapshot, context_id=context_id)
             return analysis
@@ -367,34 +447,112 @@ class AIAnalyzer:
 
     def _create_message(self, system: str, messages: list, max_tokens: int) -> str:
         try:
-            response = self.client.messages.create(
-                model=config.AI_MODEL,
-                max_tokens=max_tokens,
-                system=system,
-                messages=messages,
-            )
+            if self.provider == "anthropic":
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=messages,
+                )
+                result = self._anthropic_response_text(response)
+            else:
+                request = {
+                    "model": self.model,
+                    "messages": [{"role": "system", "content": system}, *messages],
+                }
+                if self.provider == "openai":
+                    request["max_completion_tokens"] = max_tokens
+                else:
+                    request["max_tokens"] = max_tokens
+                response = self.client.chat.completions.create(**request)
+                result = self._openai_response_text(response)
         except Exception as exc:
-            raise AIAnalyzerError(
-                f"Remote AI request failed ({type(exc).__name__}). "
-                "Check connectivity, credentials, model access, and retry."
-            ) from exc
+            raise AIAnalyzerError(self._remote_error_message(exc)) from exc
 
+        if len(result) > config.MAX_AI_RESPONSE_CHARS:
+            raise AIAnalyzerError(
+                f"LLM response exceeded the {config.MAX_AI_RESPONSE_CHARS}-character limit"
+            )
+        return result
+
+    @staticmethod
+    def _anthropic_response_text(response) -> str:
         content = getattr(response, 'content', None)
         if not isinstance(content, (list, tuple)):
-            raise AIAnalyzerError("Remote AI response did not contain a content block list")
+            raise AIAnalyzerError("Anthropic response did not contain a content block list")
         parts = []
         for block in content:
             text = getattr(block, 'text', None)
             if isinstance(text, str) and text:
                 parts.append(text)
         if not parts:
-            raise AIAnalyzerError("Remote AI response did not contain any text content")
-        result = '\n'.join(parts)
-        if len(result) > config.MAX_AI_RESPONSE_CHARS:
-            raise AIAnalyzerError(
-                f"Remote AI response exceeded the {config.MAX_AI_RESPONSE_CHARS}-character limit"
+            raise AIAnalyzerError("Anthropic response did not contain any text content")
+        return '\n'.join(parts)
+
+    @staticmethod
+    def _openai_response_text(response) -> str:
+        choices = getattr(response, "choices", None)
+        if not isinstance(choices, (list, tuple)) or not choices:
+            raise AIAnalyzerError("OpenAI-compatible response did not contain choices")
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content:
+            return content
+        if isinstance(content, (list, tuple)):
+            parts = []
+            for block in content:
+                text = getattr(block, "text", None)
+                if isinstance(block, Mapping):
+                    text = block.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+            if parts:
+                return "\n".join(parts)
+        raise AIAnalyzerError("OpenAI-compatible response did not contain text content")
+
+    def _remote_error_message(self, exc: Exception) -> str:
+        """Convert provider failures into bounded, actionable UI messages."""
+        error_name = type(exc).__name__
+        status_code = getattr(exc, "status_code", None)
+        provider_name = {
+            "anthropic": "Anthropic",
+            "openai": "OpenAI",
+            "gemini": "Google Gemini",
+            "ollama": "Local Ollama",
+        }.get(self.provider, self.provider)
+        key_name = self.key_name or "the configured API key"
+
+        if error_name == "AuthenticationError" or status_code == 401:
+            return (
+                f"{provider_name} rejected {key_name} (HTTP 401). Revoke any exposed key, "
+                "create a replacement provider key, update .env, and retry."
             )
-        return result
+        if error_name == "PermissionDeniedError" or status_code == 403:
+            return (
+                f"{provider_name} denied access to model {self.model!r} (HTTP 403). "
+                "Check the API workspace, billing, usage tier, and model permissions."
+            )
+        if error_name == "NotFoundError" or status_code == 404:
+            return (
+                f"{provider_name} could not find or grant access to model {self.model!r} "
+                "(HTTP 404). Set AIDEBUG_AI_MODEL to a model available to this API key."
+            )
+        if error_name == "RateLimitError" or status_code == 429:
+            return (
+                f"{provider_name} rate or spending limit reached (HTTP 429). Check provider limits "
+                "and billing, then retry later."
+            )
+        if error_name in {"APIConnectionError", "APITimeoutError", "ConnectError"}:
+            return (
+                f"{provider_name} connection failed ({error_name}). Check the endpoint and retry; "
+                "use --offline when remote analysis is not required."
+            )
+        if isinstance(status_code, int):
+            return (
+                f"{provider_name} request failed ({error_name}, HTTP {status_code}) while using "
+                f"model {self.model!r}."
+            )
+        return f"{provider_name} request failed ({error_name}) while using model {self.model!r}."
 
     def _context_key(self, context_id: str) -> str:
         if not isinstance(context_id, str) or not context_id.strip():
@@ -533,7 +691,7 @@ class AIAnalyzer:
             notes=self._clean_text(data.get('notes'), 4_000),
             decompilation_review=bounded_review,
             raw_response=raw,
-            cache_key=config.AI_CACHE_KEY,
+            cache_key=self.cache_key,
         )
 
     def _parse_failure(self, raw: str) -> AIAnalysis:

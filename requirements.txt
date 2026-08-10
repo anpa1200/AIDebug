@@ -1,5 +1,8 @@
+asn1crypto>=1.5.1
 capstone>=5
+cryptography>=43
 pefile>=2023.2.7
 pyelftools>=0.31
-textual>=8.2.8
+python-dotenv>=1.0.1
 rich>=15.0.0
+textual>=8.2.8

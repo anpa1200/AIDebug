@@ -70,11 +70,12 @@ An owner must verify all of the following outside the source tree:
 
 ## Current Status
 
-[v2.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v2.0.0) is public on
-[PyPI](https://pypi.org/project/1200km-aidebug/2.0.0/). The release workflow
+[v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0) is the current
+release, with its version-matched distribution published on
+[PyPI](https://pypi.org/project/1200km-aidebug/3.0.0/). The release workflow
 verified the immutable tag, repeated the source and distribution checks, and
 smoke-tested the published wheel; a separate fresh-environment install also
-reported `AIDebug 2.0.0` with no broken requirements. The Debian/Kali proposal
+reported `AIDebug 3.0.0` with no broken requirements. The Debian/Kali proposal
 supports only the tested offline base until optional AI/Frida dependency
 decisions are made, and it has not been accepted or validated on current Kali
 builders. The checked Ubuntu Noble repository is below several declared
