@@ -101,6 +101,35 @@ Analyze one C translation unit through a temporary, non-executed ELF artifact:
 aidebug --source /path/to/example.c --offline --no-tui
 ```
 
+Identify an arbitrary file independently of its filename extension:
+
+```bash
+aidebug --identify /path/to/renamed-or-unknown-file --offline
+```
+
+`--identify` reports structured JSON with the declared type, MIME type, common
+extensions, confidence, method, evidence, SHA-256, and size. Deterministic
+coverage includes common executable and bytecode formats, archives and disk
+images, Office/OpenDocument/EPUB containers, documents, images, audio/video,
+packet captures, databases, registry/event-log artifacts, scripts, and text.
+ZIP-based formats are inspected by bounded member names and small metadata
+reads; files are never executed or extracted.
+
+Install `python-magic` plus the operating system's `libmagic` database for
+additional signatures known to the local platform:
+
+```bash
+python -m pip install python-magic
+```
+
+When no deterministic signature, structure, or text rule matches, a configured
+AI provider may infer a candidate from bounded metadata: the extension, size,
+SHA-256, up to 96 header bytes, 32 tail bytes, sample entropy, and NUL ratio.
+The file body, extracted strings, and filesystem path are not sent. AI-only
+results are labeled `ai-inference`, capped at 60% confidence, and require
+analyst validation. Use `--offline` to disable the fallback completely; an
+unresolved type is reported as `Unknown` with exit status 2.
+
 Inspect prior analysis by file or SHA-256:
 
 ```bash

@@ -484,6 +484,36 @@ def test_openai_compatible_provider_uses_chat_completion_shape():
     assert analyzer.cache_key.startswith("gemini:gemini-3.6-flash:")
 
 
+def test_ai_file_type_fallback_transmits_only_bounded_evidence():
+    response = json.dumps({
+        "type_name": "Proprietary container",
+        "mime_type": "application/octet-stream",
+        "extensions": [".bin"],
+        "confidence": 0.4,
+        "evidence": ["header layout"],
+        "alternatives": ["encrypted payload"],
+    })
+    client = FakeClient([response])
+    analyzer = AIAnalyzer(client=client)
+    evidence = {
+        "filename_extension": ".bin",
+        "size": 128,
+        "sha256": "a" * 64,
+        "header_hex": "01020304",
+        "tail_hex": "fefd",
+        "sample_entropy": 7.1,
+        "nul_ratio": 0.0,
+    }
+    result = analyzer.identify_file_type(evidence)
+    assert result["type_name"] == "Proprietary container"
+    call = client.messages.calls[0]
+    prompt = call["messages"][0]["content"]
+    assert "bounded_file_evidence" in prompt
+    assert "01020304" in prompt
+    assert "filesystem" not in prompt
+    assert "Return valid JSON only" in call["system"]
+
+
 def test_offline_import_and_analysis_work_without_anthropic():
     code = """
 import builtins

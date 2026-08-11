@@ -49,6 +49,7 @@ def test_main_help_runs():
     assert "AIDebug" in result.stdout
     assert "--binary" in result.stdout
     assert "--source" in result.stdout
+    assert "--identify" in result.stdout
     assert "--decompile" in result.stdout
     assert "--decompile-all" in result.stdout
     assert "--learn" in result.stdout
@@ -56,6 +57,37 @@ def test_main_help_runs():
     assert "--learning-compiler" in result.stdout
     assert "--learning-collection" in result.stdout
     assert "--breakpoint" in result.stdout
+
+
+def test_identify_declares_type_without_extension_or_database(tmp_path):
+    sample = tmp_path / "renamed.bin"
+    sample.write_bytes(b"%PDF-1.7\n")
+    db_path = tmp_path / "must-not-exist.db"
+    result = subprocess.run(
+        [sys.executable, "main.py", "--identify", str(sample), "--offline"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["type_name"] == "PDF document"
+    assert payload["method"] == "magic"
+    assert payload["ai_used"] is False
+    assert not db_path.exists()
+
+
+def test_identify_unknown_offline_returns_distinct_status(tmp_path):
+    sample = tmp_path / "unknown.bin"
+    sample.write_bytes(bytes(range(1, 200)))
+    result = subprocess.run(
+        [sys.executable, "main.py", "--identify", str(sample), "--offline"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["type_name"] == "Unknown"
 
 
 def test_learning_mode_lists_and_opens_lessons_without_database(tmp_path):

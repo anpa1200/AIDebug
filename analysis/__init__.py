@@ -7,6 +7,7 @@ from .decompiler import (
     write_full_decompilation,
 )
 from .disassembler import Disassembler, Function, Instruction
+from .file_type import FileTypeDetector, FileTypeResult
 from .flirt import FlirtMatch, FlirtMatcher
 from .pattern_detector import MalwarePattern, PatternDetector
 from .pe_structure import (
@@ -57,6 +58,7 @@ from .static_analyzer import BinaryInfo, ImportInfo, SectionInfo, StaticAnalyzer
 
 __all__ = [
     'StaticAnalyzer', 'CSourceAnalyzer', 'BinaryInfo', 'SectionInfo', 'ImportInfo',
+    'FileTypeDetector', 'FileTypeResult',
     'Disassembler', 'Function', 'Instruction',
     'GhidraDecompiler', 'DecompiledFunction', 'DecompilerError',
     'render_full_decompilation', 'write_full_decompilation',
