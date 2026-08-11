@@ -127,7 +127,18 @@ class StaticAnalyzer:
         elif raw_data[:4] == b'\x7fELF':
             info = self._analyze_elf(path, raw_data, sha256, filename)
         else:
-            raise ValueError(f"Unknown binary format: {raw_data[:4].hex()}")
+            from .file_type import FileTypeDetector
+
+            detected = FileTypeDetector().identify_bytes(raw_data, filename=filename)
+            if detected.is_unknown:
+                raise ValueError(
+                    f"Unknown binary format: {raw_data[:4].hex()}; use --identify for "
+                    "broad file-type detection and optional AI fallback"
+                )
+            raise ValueError(
+                f"Detected {detected.type_name} ({detected.mime_type}), which is not a "
+                "supported executable analysis format; use --identify for classification"
+            )
 
         info.raw_data = raw_data
         return info

@@ -7,6 +7,7 @@ Usage:
     python main.py --binary <path> --decompile         # add Ghidra C-like output
     python main.py --source <path.c> --offline         # compile to temporary ELF + analyze
     python main.py --binary <path> --pid 1234         # dynamic mode (attach Frida)
+    python main.py --identify <path>                  # broad file-type identification
     python main.py --list-sessions                    # show past analysis sessions
     python main.py --history <file-or-sha256>         # show prior hash-matched analyses
     python main.py --session 1 --report               # HTML report for session 1
@@ -119,6 +120,27 @@ def load_c_source(path: str, *, max_functions: int | None = None):
     if info.compiled_sha256:
         print(f"[*] Compiled artifact SHA-256: {info.compiled_sha256}")
     return _prepare_static_analysis(info, max_functions=max_functions)
+
+
+def identify_file(path: str, *, offline: bool = False) -> int:
+    """Identify an arbitrary file locally, using bounded AI metadata only as fallback."""
+    from analysis import FileTypeDetector
+
+    detector = FileTypeDetector()
+    ai_identifier = None
+    if not offline:
+        def ai_identifier(evidence):
+            analyzer = _make_analyzer(False)
+            return analyzer.identify_file_type(evidence)
+
+    result = detector.identify(path, ai_identifier=ai_identifier)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    if result.ai_used:
+        print(
+            "[!] AI classification is capped at 60% confidence and requires analyst validation.",
+            file=sys.stderr,
+        )
+    return 2 if result.is_unknown else 0
 
 
 def _prepare_static_analysis(info, *, max_functions: int | None = None):
@@ -1092,6 +1114,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--binary",         help="Path to binary (PE or ELF)")
     parser.add_argument(
+        "--identify",
+        metavar="PATH",
+        help=(
+            "Identify an arbitrary file by signature and container structure; if unknown, "
+            "a configured AI provider receives only bounded header metadata unless --offline"
+        ),
+    )
+    parser.add_argument(
         "--source",
         metavar="PATH.c",
         help="Path to C source; compile to a temporary, non-executed ELF for static analysis",
@@ -1216,6 +1246,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     wants_report = args.report or args.yara or args.json_export
+    identify = getattr(args, "identify", None)
     selected_input = args.binary or args.source
     decompile = getattr(args, "decompile", None)
     decompile_all = getattr(args, "decompile_all", None)
@@ -1230,6 +1261,35 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         or getattr(args, "debug_command", [])
         or getattr(args, "gdb", None)
     )
+    if identify:
+        conflicting = (
+            selected_input
+            or learn is not None
+            or args.list_sessions
+            or args.session
+            or wants_report
+            or args.mode != "static"
+            or args.pid
+            or args.frida_host
+            or args.no_tui
+            or args.out_dir != "."
+            or args.db != config.DB_PATH
+            or decompile
+            or decompile_all
+            or ghidra_headless
+            or history
+            or debug_options
+        )
+        if conflicting:
+            parser.error("--identify cannot be combined with analysis, debug, or reporting options")
+        input_path = Path(identify).expanduser()
+        if not input_path.exists():
+            parser.error(f"file not found: {_terminal_text(identify)}")
+        if not input_path.is_file():
+            parser.error(f"file is not a regular file: {_terminal_text(identify)}")
+        if not os.access(input_path, os.R_OK):
+            parser.error(f"file is not readable: {_terminal_text(identify)}")
+        return
     if learn is not None:
         conflicting = (
             selected_input
@@ -1343,7 +1403,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
 
     if not selected_input and not wants_report:
         parser.error(
-            "choose --binary, --source, --learn, --history, --list-sessions, "
+            "choose --binary, --source, --identify, --learn, --history, --list-sessions, "
             "or a reporting command"
         )
 
@@ -1408,6 +1468,12 @@ def _execute(args) -> int:
     active_session_id = None
     session_finished = False
     try:
+        identify_argument = getattr(args, "identify", None)
+        if identify_argument:
+            return identify_file(
+                os.fspath(Path(identify_argument).expanduser()),
+                offline=bool(args.offline),
+            )
         if getattr(args, "learn", None) is not None:
             runner = run_learning if args.no_tui else run_learning_tui
             return runner(
@@ -1607,7 +1673,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     _validate_args(args, parser)
-    banner()
+    if not getattr(args, "identify", None):
+        banner()
     try:
         return _execute(args)
     except CLIError as exc:
