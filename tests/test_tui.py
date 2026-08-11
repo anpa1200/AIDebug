@@ -273,6 +273,30 @@ def test_tui_file_inspector_routes_pe_to_full_structure(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_tui_strings_binding_opens_workspace_with_shared_ai_lock(monkeypatch):
+    class FakeStringsScreen(Screen):
+        def __init__(self, binary_info, analyzer, *, ai_lock=None):
+            super().__init__()
+            self.binary_info = binary_info
+            self.analyzer = analyzer
+            self.ai_lock = ai_lock
+
+    monkeypatch.setattr(tui_module, "StringsAnalysisScreen", FakeStringsScreen)
+
+    async def scenario():
+        analyzer = FakeAnalyzer()
+        app = _app(analyzer)
+        async with app.run_test() as pilot:
+            await pilot.press("s")
+            await pilot.pause()
+            assert isinstance(app.screen, FakeStringsScreen)
+            assert app.screen.binary_info is app.binary_info
+            assert app.screen.analyzer is analyzer
+            assert app.screen.ai_lock is app._ai_lock
+
+    asyncio.run(scenario())
+
+
 class FakeLearningAnalyzer:
     compiler = "/usr/bin/fake-gcc"
 

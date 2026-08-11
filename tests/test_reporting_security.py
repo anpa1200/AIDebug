@@ -2,7 +2,7 @@ import json
 import os
 import re
 
-from reporting._io import atomic_write_text
+from reporting._io import atomic_write_json, atomic_write_text
 from reporting.html_report import HTMLReporter
 from reporting.json_export import JSONExporter
 
@@ -136,3 +136,20 @@ def test_atomic_writer_falls_back_when_fchmod_is_unavailable(monkeypatch, tmp_pa
 
     assert atomic_write_text(output, "complete\n") == str(output)
     assert output.read_text(encoding="utf-8") == "complete\n"
+
+
+def test_streaming_json_writer_is_private_and_does_not_follow_destination_symlink(tmp_path):
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"safe": true}\n', encoding="utf-8")
+    output = tmp_path / "strings.json"
+    try:
+        output.symlink_to(victim)
+    except (OSError, NotImplementedError):
+        return
+
+    assert atomic_write_json(output, {"strings": ["α", "β"]}) == str(output)
+    assert not output.is_symlink()
+    assert json.loads(output.read_text(encoding="utf-8")) == {"strings": ["α", "β"]}
+    assert victim.read_text(encoding="utf-8") == '{"safe": true}\n'
+    if os.name != "nt":
+        assert (os.stat(output).st_mode & 0o777) == 0o600

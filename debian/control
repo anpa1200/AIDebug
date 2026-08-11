@@ -13,7 +13,7 @@ Build-Depends:
  python3-pytest,
  python3-rich (>= 13),
  python3-setuptools,
- python3-textual (>= 0.52)
+ python3-textual (>= 8.2.8)
 Standards-Version: 4.7.4
 Homepage: https://github.com/anpa1200/AIDebug
 Vcs-Browser: https://github.com/anpa1200/AIDebug
@@ -29,7 +29,7 @@ Depends:
  python3-pefile (>= 2023.2.7),
  python3-pyelftools (>= 0.31),
  python3-rich (>= 13),
- python3-textual (>= 0.52)
+ python3-textual (>= 8.2.8)
 Suggests:
  bubblewrap,
  gcc,

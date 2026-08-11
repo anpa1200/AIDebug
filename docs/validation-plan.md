@@ -28,7 +28,7 @@ Do not use live malware in the repository.
 ## Current Baseline
 
 - Tests run in CI on Python 3.10, 3.11, 3.12, and 3.13.
-- CI separately exercises the headless TUI at the declared Textual 0.52.0 floor
+- CI separately exercises the headless TUI at the declared Textual 8.2.8 floor
   and installs/imports the Frida 17.x dynamic extra on Python 3.12.
 - CI runs Ruff, Bandit, declared-dependency audits, secret scanning, exact
   release metadata checks, package builds, Twine validation, and a fresh-wheel

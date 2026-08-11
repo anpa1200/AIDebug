@@ -35,7 +35,7 @@ The gate verifies:
 
 GitHub CI repeats these checks on supported Python versions, installs and
 imports the optional dynamic extra on Python 3.12, exercises its mock contracts,
-exercises the headless TUI against the declared `textual==0.52.0` compatibility
+exercises the headless TUI against the declared `textual==8.2.8` compatibility
 floor, and adds a pinned Gitleaks history scan. These checks do not replace live
 Frida validation on each target OS/architecture. The TUI floor is a
 compatibility check for the tested headless workflows, not a claim that every
@@ -69,6 +69,10 @@ An owner must verify all of the following outside the source tree:
   until their upstream maintainers and target systems confirm them.
 
 ## Current Status
+
+The source tree is prepared as the AIDebug 3.1.0 release candidate. It is not a
+published artifact until the version-matched immutable tag and GitHub release
+successfully complete the verified publishing workflow.
 
 [v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0) is the current
 release, with its version-matched distribution published on

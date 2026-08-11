@@ -56,7 +56,7 @@ Runtime Python dependencies:
 - pefile >= 2023.2.7
 - pyelftools >= 0.31
 - rich >= 13.0.0
-- textual >= 0.52.0
+- textual >= 8.2.8
 
 Optional dynamic-analysis dependency:
 

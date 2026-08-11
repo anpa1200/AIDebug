@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import analysis.ai_analyzer as ai_analyzer_module
 import config
 from analysis.ai_analyzer import AIAnalysis, AIAnalyzer, AIAnalyzerError, OfflineAnalyzer
 from analysis.cfg import CFGBuilder
@@ -459,6 +460,114 @@ def test_local_ollama_provider_needs_no_api_key(monkeypatch):
         "base_url": "http://127.0.0.1:11434/v1",
         "is_local": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://localhost:11434/v1", False),
+        ("http://127.0.0.1:11434/v1", True),
+        ("http://[::1]:11434/v1", True),
+        ("unix:///tmp/ollama.sock", False),
+        ("http+unix://%2Ftmp%2Follama.sock/v1", False),
+        ("https://ollama.example/v1", False),
+        ("http://localhost.example/v1", False),
+        ("http://192.168.1.20:11434/v1", False),
+        ("", False),
+    ],
+)
+def test_llm_endpoint_locality_is_fail_closed(base_url, expected):
+    assert config.is_local_llm_endpoint("ollama", base_url) is expected
+    assert config.is_local_llm_endpoint("openai", base_url) is False
+
+
+def test_direct_remote_ollama_analyzer_is_labeled_as_transmitting():
+    analyzer = AIAnalyzer(
+        client=FakeOpenAIClient([]),
+        provider="ollama",
+        base_url="https://ollama.example/v1",
+    )
+
+    assert analyzer.transmits_evidence is True
+    assert analyzer.display_name.startswith("Ollama / ")
+    assert "Local Ollama" not in analyzer._remote_error_message(ConnectionError())
+
+
+def test_local_ollama_transport_ignores_proxy_environment(monkeypatch):
+    captured = {}
+    http_client = SimpleNamespace(close=lambda: None)
+
+    def make_http_client(**kwargs):
+        captured["http_client_kwargs"] = kwargs
+        return http_client
+
+    def make_openai_client(**kwargs):
+        captured["openai_kwargs"] = kwargs
+        return FakeOpenAIClient([])
+
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
+    monkeypatch.setattr(ai_analyzer_module.openai, "DefaultHttpxClient", make_http_client)
+    monkeypatch.setattr(ai_analyzer_module.openai, "OpenAI", make_openai_client)
+
+    analyzer = AIAnalyzer(
+        provider="ollama",
+        base_url="http://127.0.0.1:11434/v1",
+    )
+
+    assert analyzer.transmits_evidence is False
+    assert analyzer.display_name.startswith("Local Ollama / ")
+    assert captured["http_client_kwargs"] == {
+        "trust_env": False,
+        "follow_redirects": False,
+    }
+    assert captured["openai_kwargs"]["http_client"] is http_client
+
+
+def test_remote_ollama_keeps_default_transport_and_remote_label(monkeypatch):
+    captured = {}
+
+    def reject_local_http_client(**kwargs):
+        pytest.fail(f"remote Ollama unexpectedly created a local transport: {kwargs}")
+
+    def make_openai_client(**kwargs):
+        captured.update(kwargs)
+        return FakeOpenAIClient([])
+
+    monkeypatch.setattr(
+        ai_analyzer_module.openai, "DefaultHttpxClient", reject_local_http_client
+    )
+    monkeypatch.setattr(ai_analyzer_module.openai, "OpenAI", make_openai_client)
+
+    analyzer = AIAnalyzer(
+        provider="ollama",
+        base_url="https://ollama.example/v1",
+    )
+
+    assert analyzer.transmits_evidence is True
+    assert analyzer.display_name.startswith("Ollama / ")
+    assert "Local Ollama" not in analyzer._remote_error_message(ConnectionError())
+    assert "http_client" not in captured
+
+
+def test_custom_ollama_client_is_conservatively_treated_as_transmitting():
+    analyzer = AIAnalyzer(
+        client=FakeOpenAIClient([]),
+        provider="ollama",
+        base_url="http://127.0.0.1:11434/v1",
+    )
+
+    assert analyzer.transmits_evidence is True
+    assert analyzer.display_name.startswith("Ollama / ")
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["unix:///tmp/ollama.sock", "http+unix://%2Ftmp%2Follama.sock/v1"],
+)
+def test_ollama_unix_socket_urls_are_rejected(base_url):
+    with pytest.raises(ValueError, match="Unix-socket Ollama URLs are not supported"):
+        AIAnalyzer(client=FakeOpenAIClient([]), provider="ollama", base_url=base_url)
 
 
 def test_openai_compatible_provider_uses_chat_completion_shape():

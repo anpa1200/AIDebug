@@ -1,5 +1,7 @@
+import ipaddress
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -37,6 +39,39 @@ LLM_BASE_URLS = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "ollama": "http://127.0.0.1:11434/v1",
 }
+
+
+def is_local_llm_endpoint(provider: str, base_url: str) -> bool:
+    """Return true only for supported, literal loopback Ollama HTTP(S) URLs."""
+    if str(provider).strip().lower() != "ollama":
+        return False
+    try:
+        parsed = urlsplit(str(base_url).strip())
+    except (TypeError, ValueError):
+        return False
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return False
+    hostname = parsed.hostname.rstrip(".").casefold()
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_ollama_base_url(base_url: str) -> str:
+    """Validate the OpenAI-compatible Ollama transport supported by AIDebug."""
+    normalized = str(base_url).strip()
+    try:
+        parsed = urlsplit(normalized)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("OLLAMA_BASE_URL must be a valid HTTP(S) URL") from exc
+    if parsed.scheme.lower() in {"unix", "http+unix"}:
+        raise ValueError(
+            "Unix-socket Ollama URLs are not supported; use an HTTP(S) loopback endpoint"
+        )
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("OLLAMA_BASE_URL must be a valid HTTP(S) URL")
+    return normalized
 
 
 def _configured_providers() -> list[str]:
@@ -98,6 +133,8 @@ def resolve_llm_settings() -> dict | None:
         base_url = OLLAMA_BASE_URL if provider == "ollama" else LLM_BASE_URLS.get(provider, "")
     if provider == "ollama" and not base_url:
         base_url = LLM_BASE_URLS["ollama"]
+    if provider == "ollama":
+        base_url = validate_ollama_base_url(base_url)
 
     return {
         "provider": provider,
@@ -105,7 +142,7 @@ def resolve_llm_settings() -> dict | None:
         "api_key": api_keys[provider],
         "key_name": key_name,
         "base_url": base_url,
-        "is_local": provider == "ollama",
+        "is_local": is_local_llm_endpoint(provider, base_url),
     }
 
 
@@ -119,9 +156,15 @@ AI_MODEL = (
     or os.environ.get("AIDEBUG_AI_MODEL", "").strip()
     or LLM_DEFAULT_MODELS[AI_PROVIDER]
 )
-AI_PROMPT_SCHEMA_VERSION = 4
+AI_PROMPT_SCHEMA_VERSION = 5
 AI_CACHE_KEY = f"{AI_PROVIDER}:{AI_MODEL}:prompt-v{AI_PROMPT_SCHEMA_VERSION}"
 AI_MAX_TOKENS = 3072
+AI_STRING_CHUNK_MAX_ITEMS = 40
+AI_STRING_CHUNK_MAX_CHARS = 48_000
+AI_STRING_MAX_CHUNKS = 25_000
+AI_STRING_MAX_CONSECUTIVE_FAILURES = 3
+AI_STRING_MAX_TOKENS = 8_192
+AI_STRING_REDUCE_MAX_CHARS = 120_000
 AI_TIMEOUT_SECONDS = 90.0
 MAX_AI_RESPONSE_CHARS = 50_000
 MAX_AI_FOLLOWUP_CHARS = 4_000
@@ -146,7 +189,7 @@ DB_PATH = os.path.abspath(os.path.expanduser(
 MAX_BINARY_SIZE_BYTES = 128 * 1024 * 1024
 MAX_C_SOURCE_SIZE_BYTES = 2 * 1024 * 1024
 C_SOURCE_COMPILE_TIMEOUT_SECONDS = 30.0
-MAX_EXTRACTED_STRINGS = 100_000
+MAX_EXTRACTED_STRINGS = 25_000
 MAX_STRING_CHARS = 4_096
 MAX_SYMBOLS_TO_SCAN = 100_000
 MAX_IMPORT_FUNCTIONS = 50_000
@@ -194,4 +237,4 @@ INSTRUMENTATION_READY_TIMEOUT_SECONDS = 3.0
 
 # --- UI ---
 APP_TITLE = "AIDebug — AI-Assisted Malware Analyzer"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"

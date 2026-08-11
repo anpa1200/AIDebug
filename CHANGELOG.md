@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 3.1.0 - 2026-08-11
+
+- Added whole-file ASCII, UTF-8, UTF-16LE, and UTF-16BE string extraction with
+  stable offsets, mapped addresses, bounded occurrence metadata, exact coverage,
+  multi-label security categories, deterministic ranking, and local DLL/API
+  descriptions.
+- Added a paginated String Intelligence terminal workspace and a dedicated
+  owner-only streaming JSON export with length, encoding, category, and search
+  filters.
+- Added explicit opt-in whole-inventory AI triage with prompt-injection
+  isolation, bounded chunks, per-string schema validation, grounded IOC checks,
+  circuit breaking, complete coverage accounting, and structured reduction.
+- Treat non-loopback Ollama endpoints as remote evidence transfers and require
+  the same cost/privacy acknowledgement as other remote providers.
+
 ## 3.0.0 - 2026-08-10
 
 - Expanded the PE workspace with complete TLS directory and callback evidence,

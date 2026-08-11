@@ -105,6 +105,8 @@ jobs:
           /tmp/aidebug-wheel-smoke/bin/aidebug --help >/dev/null
           /tmp/aidebug-wheel-smoke/bin/aidebug --version
           /tmp/aidebug-wheel-smoke/bin/python -c "from importlib.resources import files; assert files('analysis').joinpath('data/flirt_sigs.json').is_file()"
+          /tmp/aidebug-wheel-smoke/bin/python -c "from importlib.resources import files; assert files('analysis').joinpath('data/string_descriptions.json').is_file()"
+          /tmp/aidebug-wheel-smoke/bin/python -c "from analysis.string_analyzer import StringAnalyzer; record = StringAnalyzer(min_length=4, encodings=('ascii',)).analyze(b'kernel32.dll\\0').records[0]; assert record.entities == (('dll', 'kernel32.dll'),) and record.description"
           /tmp/aidebug-wheel-smoke/bin/python -c "from analysis.static_analyzer import StaticAnalyzer; info = StaticAnalyzer().analyze('/bin/true'); assert info.file_format == 'ELF'"
           /tmp/aidebug-wheel-smoke/bin/aidebug --binary /bin/true --offline --no-tui --json-export --yara --max-functions 5 --out-dir /tmp/aidebug-wheel-output --db /tmp/aidebug-wheel-smoke.db
           test -s /tmp/aidebug-wheel-output/true_session_1_export.json

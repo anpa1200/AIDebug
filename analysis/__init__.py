@@ -55,14 +55,21 @@ from .pe_structure import (
 )
 from .source_analyzer import CSourceAnalyzer
 from .static_analyzer import BinaryInfo, ImportInfo, SectionInfo, StaticAnalyzer
+from .string_analyzer import (
+    SmartStringAnalysis,
+    SmartStringAnalyzer,
+    StringAnalyzer,
+    StringRecord,
+)
 
 __all__ = [
     'StaticAnalyzer', 'CSourceAnalyzer', 'BinaryInfo', 'SectionInfo', 'ImportInfo',
+    'StringAnalyzer', 'SmartStringAnalyzer', 'SmartStringAnalysis', 'StringRecord',
     'FileTypeDetector', 'FileTypeResult',
     'Disassembler', 'Function', 'Instruction',
     'GhidraDecompiler', 'DecompiledFunction', 'DecompilerError',
     'render_full_decompilation', 'write_full_decompilation',
-    'AIAnalyzer', 'AIAnalysis', 'AIAnalyzerError', 'OfflineAnalyzer',
+    'AIAnalyzer', 'AIAnalysis', 'StringAIReport', 'AIAnalyzerError', 'OfflineAnalyzer',
     'CFGBuilder', 'CFGTextRenderer', 'CFGSVGRenderer', 'CFG',
     'PatternDetector', 'MalwarePattern', 'FlirtMatcher', 'FlirtMatch',
     'PEStructureAnalyzer', 'PEStructure', 'PEHeader', 'PEHeaderField',
@@ -87,7 +94,9 @@ __all__ = [
 
 def __getattr__(name):
     """Keep deterministic static analysis importable without the AI SDK."""
-    if name in {'AIAnalyzer', 'AIAnalysis', 'AIAnalyzerError', 'OfflineAnalyzer'}:
+    if name in {
+        'AIAnalyzer', 'AIAnalysis', 'StringAIReport', 'AIAnalyzerError', 'OfflineAnalyzer'
+    }:
         from . import ai_analyzer
         return getattr(ai_analyzer, name)
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

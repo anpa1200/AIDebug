@@ -1,3 +1,15 @@
+aidebug (3.1.0-0kali1) kali-dev; urgency=medium
+
+  * Add whole-file, occurrence-aware String Intelligence for ASCII, UTF-8,
+    UTF-16LE, and UTF-16BE evidence.
+  * Add multi-label IOC, DLL, API, command, registry, and path classification
+    with neutral local descriptions and explicit coverage.
+  * Add the paginated terminal workspace, private JSON export, and validated
+    opt-in whole-inventory AI triage.
+  * Treat non-loopback Ollama endpoints as remote evidence transfers.
+
+ -- Andrey Pautov <1200km@gmail.com>  Tue, 11 Aug 2026 22:52:45 +0300
+
 aidebug (3.0.0-0kali1) kali-dev; urgency=medium
 
   * Expand PE analysis with TLS, unwind, load-config, and CFG evidence.

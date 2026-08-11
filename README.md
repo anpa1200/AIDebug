@@ -1,5 +1,6 @@
 # AIDebug
 
+[![Source v3.1.0](https://img.shields.io/badge/source-v3.1.0-blueviolet)](docs/release-notes/v3.1.0.md)
 [![PyPI v3.0.0](https://img.shields.io/badge/PyPI-v3.0.0-blue)](https://pypi.org/project/1200km-aidebug/3.0.0/)
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/1200km-aidebug/3.0.0/)
 [![CI](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml/badge.svg)](https://github.com/anpa1200/AIDebug/actions/workflows/ci.yml)
@@ -13,12 +14,20 @@ structure analysis, Capstone disassembly, Ghidra reconstruction, optional LLM
 cross-checks, local ELF debugging, compiled learning exercises, and
 analyst-review reporting.
 
-> Current release: [AIDebug v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0),
-> published as [`1200km-aidebug`](https://pypi.org/project/1200km-aidebug/3.0.0/).
+> Current source version: **AIDebug 3.1.0**. See the
+> [3.1.0 release notes](docs/release-notes/v3.1.0.md).
+>
+> The latest immutable published release remains
+> [AIDebug v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0),
+> available as [`1200km-aidebug`](https://pypi.org/project/1200km-aidebug/3.0.0/),
+> until the version-matched 3.1.0 tag and GitHub release complete the verified
+> publishing workflow.
 
 ## Highlights
 
 - Deterministic PE and ELF static triage without requiring an AI service.
+- Whole-file, occurrence-aware ASCII, UTF-8, UTF-16LE, and UTF-16BE string
+  intelligence with smart categories, ranking, and DLL/API explanations.
 - Read-only, paged hex viewer for the complete analyzed file.
 - Deep PE32/PE32+ structure explorer with mapped RVA, VA, and file offsets.
 - Ghidra-backed C-like reconstruction for one function or the complete bounded
@@ -129,6 +138,65 @@ The file body, extracted strings, and filesystem path are not sent. AI-only
 results are labeled `ai-inference`, capped at 60% confidence, and require
 analyst validation. Use `--offline` to disable the fallback completely; an
 unresolved type is reported as `Unknown` with exit status 2.
+
+## String Intelligence Workspace (3.1.0)
+
+Press `S` in the main terminal interface, or start directly in the workspace:
+
+```bash
+aidebug --binary /path/to/sample.exe --offline --strings
+```
+
+The workspace preserves file offsets, mapped addresses when available,
+encoding, byte and character lengths, duplicate-occurrence information,
+section context, confidence, triage score, and the deterministic reasons for
+each classification. Filters cover minimum length, encoding, category, and
+free-text search; column sorting and pagination keep large inventories usable.
+Every selected encoding scans the complete size-bounded artifact. The retained
+inventory is capped at 25,000 records and 4,096 displayed characters per value;
+exact candidate/omission counts and full-byte coverage make either cap visible.
+Each record retains at most 32 DLL/API annotations and 4,096 description
+characters; adversarial overflows are reported in the record reasons.
+
+Detection is multi-label. A single value can simultaneously be a DLL, Windows
+path, URL, IP address, registry key, command, PowerShell fragment, named pipe,
+hash, credential candidate, user agent, or another supported evidence type.
+Known DLLs and APIs receive short neutral capability descriptions; unknown
+names receive an explicit unverified fallback instead of a guessed purpose.
+An extracted name is evidence of presence, not proof that code invoked it or
+that the sample is malicious.
+
+Print the deterministic inventory locally, filter the displayed CLI view, or
+write the canonical full inventory as owner-only JSON:
+
+```bash
+aidebug --binary /path/to/sample.exe --strings --no-tui
+aidebug --binary /path/to/sample.exe --strings --no-tui \
+  --string-encoding ascii --min-string-length 6 --string-category url
+aidebug --binary /path/to/sample.exe --strings --no-tui \
+  --strings-output reports/sample-strings.json
+```
+
+AI string review is a separate opt-in action. Press `A` inside the workspace
+and confirm the privacy/cost warning, or request it explicitly in CLI mode:
+
+```bash
+aidebug --binary /path/to/sample.exe --strings --no-tui \
+  --analyze-strings --accept-ai-cost \
+  --strings-output reports/sample-strings-ai.json
+```
+
+Every retained string is assigned a stable evidence ID. After explicit
+confirmation, the AI path plans every retained record across deterministic,
+bounded chunks; provider or validation failures stop safely and remain visible.
+Responses must account for every supplied ID and
+pass strict local schema, enum, reference, and IOC-grounding validation before
+they are accepted. A final reducer sees validated findings rather than the
+raw inventory. Extraction limits, failed batches,
+and reviewed/sent counts are always reported; incomplete coverage forces an
+`unknown` overall assessment. Strings can contain passwords, API tokens,
+customer data, and attacker-authored prompt injection, so review the remote-AI
+boundary before enabling this feature.
 
 Inspect prior analysis by file or SHA-256:
 
@@ -245,6 +313,7 @@ available separately for supported local or remote instrumentation workflows.
 |---|---|
 | HTML report | Human review and case notes |
 | Versioned JSON | Custom integration input; not a vendor-native or STIX schema |
+| String Intelligence JSON | Canonical retained string inventory plus optional validated AI annotations and coverage |
 | YARA candidates | Locally compiled detection-engineering seeds requiring review and testing |
 | ATT&CK candidates | Technique-level hypotheses requiring analyst validation |
 | CFG visualization | Function-level control-flow review |
@@ -256,14 +325,17 @@ available separately for supported local or remote instrumentation workflows.
 flowchart LR
   Input[PE, ELF, or C source] --> Parse[Bounded parsing and hashing]
   Parse --> Structure[Hex and PE structure evidence]
+  Parse --> Strings[Deterministic string intelligence]
   Parse --> Disasm[Capstone disassembly]
   Disasm --> Patterns[Deterministic patterns]
   Disasm --> Ghidra[Ghidra reconstruction]
   Patterns --> Offline[Offline findings]
   Patterns --> AI[Optional LLM cross-check]
+  Strings --> StringAI[Opt-in chunked string AI review]
   Ghidra --> AI
   Offline --> Reports[HTML, JSON, YARA, CFG]
   AI --> Reports
+  StringAI --> StringJSON[Structured string JSON]
   Reports --> History[SHA-256-indexed history]
 ```
 
@@ -296,7 +368,8 @@ untrusted samples.
 | [Sample evidence](docs/sample-evidence.md) | Illustrative screenshots and mock artifacts |
 | [Comparison](docs/comparison.md) | Scope and positioning |
 | [Release readiness](docs/release-readiness.md) | Reproducible release gates |
-| [AIDebug 3.0 release notes](docs/release-notes/v3.0.0.md) | Current release changes |
+| [AIDebug 3.1 release notes](docs/release-notes/v3.1.0.md) | Current source release changes |
+| [AIDebug 3.0 release notes](docs/release-notes/v3.0.0.md) | Previous published release changes |
 | [Changelog](CHANGELOG.md) | Version history |
 
 ## Development

@@ -34,6 +34,7 @@ class SectionInfo:
     entropy: float
     flags: list
     data: bytes = field(default=b'', repr=False)
+    raw_offset: int | None = None
 
 
 @dataclass
@@ -62,6 +63,10 @@ class BinaryInfo:
     function_symbols: list = field(default_factory=list)
     analysis_origin: str = 'binary'
     compiled_sha256: str | None = None
+    # Full occurrence-preserving string intelligence.  ``strings`` and
+    # ``all_string_data`` above remain compatibility projections for the
+    # disassembler and older integrations.
+    string_analysis: object | None = field(default=None, repr=False)
 
     @property
     def text_section(self) -> SectionInfo | None:
@@ -82,6 +87,33 @@ class BinaryInfo:
 class StaticAnalyzer:
 
     MIN_STRING_LEN = config.MIN_STRING_LENGTH
+
+    def __init__(
+        self,
+        *,
+        min_string_length: int | None = None,
+        string_encodings: tuple[str, ...] | list[str] | None = None,
+    ) -> None:
+        minimum = self.MIN_STRING_LEN if min_string_length is None else min_string_length
+        if isinstance(minimum, bool) or not isinstance(minimum, int):
+            raise TypeError("Minimum string length must be an integer")
+        if minimum < 1 or minimum > config.MAX_STRING_CHARS:
+            raise ValueError(
+                f"Minimum string length must be between 1 and {config.MAX_STRING_CHARS}"
+            )
+        encodings = (
+            ("ascii", "utf-8", "utf-16le", "utf-16be")
+            if string_encodings is None
+            else tuple(string_encodings)
+        )
+        allowed = {"ascii", "utf-8", "utf-16le", "utf-16be"}
+        if not encodings or any(encoding not in allowed for encoding in encodings):
+            raise ValueError(
+                "String encodings must contain one or more of: "
+                "ascii, utf-8, utf-16le, utf-16be"
+            )
+        self.MIN_STRING_LEN = minimum
+        self.string_encodings = tuple(dict.fromkeys(encodings))
 
     def analyze(self, path: str) -> BinaryInfo:
         try:
@@ -189,6 +221,7 @@ class StaticAnalyzer:
                 entropy=entropy,
                 flags=flags,
                 data=data,
+                raw_offset=int(sec.PointerToRawData),
             ))
 
         # Imports
@@ -222,7 +255,14 @@ class StaticAnalyzer:
                     'ordinal': exp.ordinal,
                 })
 
-        strings, string_data = self._extract_strings(raw_data, image_base, pe)
+        string_analysis = self._analyze_strings(
+            raw_data,
+            image_base=image_base,
+            offset_mapper=lambda offset: self._pe_offset_to_va(offset, image_base, pe),
+            sections=sections,
+            imports=imports,
+        )
+        strings, string_data = self._compatibility_string_projection(string_analysis)
         pe.close()
 
         return BinaryInfo(
@@ -240,6 +280,7 @@ class StaticAnalyzer:
             exports=exports,
             strings=strings,
             all_string_data=string_data,
+            string_analysis=string_analysis,
         )
 
     # ------------------------------------------------------------------
@@ -305,6 +346,7 @@ class StaticAnalyzer:
                         entropy=entropy,
                         flags=flags,
                         data=data,
+                        raw_offset=offset,
                     ))
 
             export_candidates = set()
@@ -362,15 +404,20 @@ class StaticAnalyzer:
                     functions=sorted(undefined_dynamic_symbols),
                 ))
 
-        def elf_offset_to_va(offset: int) -> int:
+        def elf_offset_to_va(offset: int) -> int | None:
             for file_offset, file_size, virtual_address in load_segments:
                 if file_offset <= offset < file_offset + file_size:
                     return virtual_address + (offset - file_offset)
-            return offset
+            return None
 
-        strings, string_data = self._extract_strings(
-            raw_data, image_base, None, offset_mapper=elf_offset_to_va
+        string_analysis = self._analyze_strings(
+            raw_data,
+            image_base=image_base,
+            offset_mapper=elf_offset_to_va,
+            sections=sections,
+            imports=imports,
         )
+        strings, string_data = self._compatibility_string_projection(string_analysis)
 
         return BinaryInfo(
             path=path,
@@ -388,11 +435,62 @@ class StaticAnalyzer:
             strings=strings,
             all_string_data=string_data,
             function_symbols=function_symbols,
+            string_analysis=string_analysis,
         )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _analyze_strings(
+        self,
+        data: bytes,
+        *,
+        image_base: int,
+        offset_mapper,
+        sections: list,
+        imports: list,
+    ):
+        """Build the occurrence-preserving deterministic string inventory."""
+        from .string_analyzer import StringAnalyzer
+
+        return StringAnalyzer(
+            min_length=self.MIN_STRING_LEN,
+            max_length=config.MAX_STRING_CHARS,
+            max_strings=config.MAX_EXTRACTED_STRINGS,
+            encodings=self.string_encodings,
+        ).analyze(
+            data,
+            image_base=image_base,
+            offset_mapper=offset_mapper,
+            sections=sections,
+            imports=imports,
+        )
+
+    @staticmethod
+    def _compatibility_string_projection(string_analysis) -> tuple[list[str], dict[int, str]]:
+        """Project rich records into the legacy unique/address containers.
+
+        The rich inventory remains canonical because a dictionary cannot
+        represent duplicate occurrences or two decodings that begin at the
+        same offset.  Keeping the first deterministic record at a mapped
+        address preserves stable disassembler references for older callers.
+        """
+        values: list[str] = []
+        by_address: dict[int, str] = {}
+        seen: set[str] = set()
+        for record in getattr(string_analysis, "records", ()):
+            value = str(getattr(record, "value", ""))
+            if value not in seen:
+                seen.add(value)
+                values.append(value)
+            addresses = tuple(getattr(record, "occurrence_addresses", ()) or ())
+            if not addresses:
+                addresses = (getattr(record, "address", None),)
+            for address in addresses:
+                if isinstance(address, int) and not isinstance(address, bool) and address >= 0:
+                    by_address.setdefault(address, value)
+        return values, by_address
 
     def _extract_strings(self, data: bytes, image_base: int, pe, offset_mapper=None) -> tuple:
         strings = []
@@ -448,6 +546,16 @@ class StaticAnalyzer:
         except Exception as exc:
             logger.debug('Unable to map PE raw offset %#x to an RVA: %s', offset, exc)
         return offset
+
+    def _pe_offset_to_va(self, offset: int, image_base: int, pe) -> int | None:
+        """Map a PE file offset without pretending an unmapped offset is a VA."""
+        try:
+            rva = pe.get_rva_from_offset(offset)
+            if rva is not None:
+                return int(rva) + int(image_base)
+        except Exception as exc:
+            logger.debug('Unable to map PE string offset %#x to an RVA: %s', offset, exc)
+        return None
 
     def _entropy(self, data: bytes) -> float:
         if not data:
