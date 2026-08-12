@@ -31,7 +31,7 @@ def test_release_metadata_rejects_wrong_tag():
     assert "does not match package version" in result.stderr
 
 
-def test_release_metadata_accepts_matching_tag_for_prepared_release():
+def test_release_metadata_matching_tag_respects_unreleased_state():
     version = check_release_metadata.config_version()
     result = subprocess.run(
         [sys.executable, str(CHECKER), "--tag", f"v{version}"],
@@ -40,7 +40,11 @@ def test_release_metadata_accepts_matching_tag_for_prepared_release():
         check=False,
         text=True,
     )
-    assert result.returncode == 0, result.stderr
+    if check_release_metadata.has_unreleased_changes():
+        assert result.returncode != 0
+        assert "still contains Unreleased changes" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
 
 
 def test_release_metadata_detects_unreleased_changes(tmp_path, monkeypatch):

@@ -50,11 +50,30 @@ production blocking decision without analyst review.
 
 ## Remote AI Data Boundary
 
-Remote analysis sends evidence to Anthropic. Depending on analysis mode, that
+Remote analysis sends evidence to the explicitly configured provider. Depending on analysis mode, that
 evidence can include the sample filename, full SHA-256 hash, architecture and OS
 metadata, imported APIs, function disassembly, bounded Ghidra reconstruction, referenced strings,
 cross-references, deterministic pattern findings, and optional runtime register
 or stack context. Treat all of it as potentially sensitive incident data.
+Only IP-literal loopback HTTP(S) Ollama endpoints are labeled local, and their
+HTTP client ignores proxy environment variables and refuses redirects.
+Unix-socket URLs are rejected until AIDebug has a dedicated Unix transport;
+non-loopback endpoints fail closed as remote evidence transfers.
+
+Whole-string AI review is a separate, explicit boundary. Opening the String
+Intelligence workspace does not transmit evidence. Pressing `A` and confirming
+the warning, or using `--analyze-strings` with the required cost
+acknowledgement, can send every retained ASCII/UTF-8/UTF-16 string in
+multiple bounded requests. Those values can contain passwords, API keys,
+tokens, personal/customer data, internal URLs and paths, or attacker-authored
+prompt injection. AIDebug labels strings as untrusted evidence, requires an
+annotation for every supplied stable ID, validates all returned evidence
+references, and performs a compact reduction, but those controls do not change
+the provider's retention, billing, regional-processing, or training policy.
+Closing or unmounting the workspace requests cooperative cancellation. An
+already in-flight request is allowed to return, but no later chunk or reducer
+request is started; any resulting coverage remains partial with an UNKNOWN
+assessment.
 
 Before remote analysis:
 
@@ -91,8 +110,18 @@ payload capture, register/stack context, and other runtime evidence.
 Current source defaults reject inputs that are not readable regular files.
 Binary inputs are capped at 128 MiB. C inputs are capped at 2 MiB and 30 seconds
 of sandboxed compilation; dynamic execution and YARA generation are disabled
-for source inputs. Extraction is capped at 100,000 strings with 4,096
-characters per string. Symbol-table scanning is capped at 100,000 records, with
+for source inputs. Each selected string encoding scans the complete bounded
+artifact; retention is capped at 25,000 records with 4,096 stored characters
+per value. Each record also caps DLL/API annotations at 32 entities and 4,096
+description characters, surfacing any omitted candidates. When the retention
+ceiling is reached, exact extracted/omitted counts
+and deterministic head/tail evidence make the loss explicit. The deterministic
+report distinguishes extracted, retained, filtered, long-value-truncated, and
+retention-truncated coverage. Whole-string AI review has separate item,
+character, response-token, reducer, and request safeguards; failed chunks are
+reported and force an
+`unknown` aggregate assessment rather than a safety conclusion. Symbol-table
+scanning is capped at 100,000 records, with
 at most 50,000 import and 50,000 export candidates retained. Discovery is capped
 at 300 function candidates and 250 instructions per function; bulk CLI analysis
 defaults to 25 selected functions.

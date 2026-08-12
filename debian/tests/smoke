@@ -8,8 +8,13 @@ python3 - <<'PY'
 from importlib.resources import files
 
 from analysis.static_analyzer import StaticAnalyzer
+from analysis.string_analyzer import StringAnalyzer
 
 assert files("analysis").joinpath("data/flirt_sigs.json").is_file()
+assert files("analysis").joinpath("data/string_descriptions.json").is_file()
+record = StringAnalyzer(min_length=4, encodings=("ascii",)).analyze(b"kernel32.dll\0").records[0]
+assert record.entities == (("dll", "kernel32.dll"),)
+assert record.description
 info = StaticAnalyzer().analyze("/bin/true")
 assert info.file_format == "ELF"
 assert info.bits in (32, 64)

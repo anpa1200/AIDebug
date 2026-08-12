@@ -6,6 +6,8 @@ Usage:
     python main.py --binary <path> --no-tui           # CLI mode (print to stdout)
     python main.py --binary <path> --decompile         # add Ghidra C-like output
     python main.py --source <path.c> --offline         # compile to temporary ELF + analyze
+    python main.py --binary <path> --strings           # open String Intelligence workspace
+    python main.py --binary <path> --strings --no-tui  # deterministic string inventory
     python main.py --binary <path> --pid 1234         # dynamic mode (attach Frida)
     python main.py --identify <path>                  # broad file-type identification
     python main.py --list-sessions                    # show past analysis sessions
@@ -22,6 +24,7 @@ import os
 import re
 import sys
 import threading
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -100,25 +103,51 @@ def _report_stem(filename: Any, session_id: int) -> str:
     return f"{stem[:80] or 'analysis'}_session_{safe_session_id}"
 
 
-def load_binary(path: str, *, max_functions: int | None = None):
-    """Run static analysis and disassembly. Returns (binary_info, disassembler, func_addresses)."""
+def load_binary(
+    path: str,
+    *,
+    max_functions: int | None = None,
+    min_string_length: int | None = None,
+    string_encodings: tuple[str, ...] | list[str] | None = None,
+    discover_functions: bool = True,
+):
+    """Run static analysis and, when requested, disassembly/function discovery."""
     from analysis import StaticAnalyzer
 
     print(f"[*] Loading: {_terminal_text(path)}")
-    analyzer = StaticAnalyzer()
+    analyzer = StaticAnalyzer(
+        min_string_length=min_string_length,
+        string_encodings=string_encodings,
+    )
     info = analyzer.analyze(path)
+    if not discover_functions:
+        _describe_static_analysis(info)
+        return info, None, []
     return _prepare_static_analysis(info, max_functions=max_functions)
 
 
-def load_c_source(path: str, *, max_functions: int | None = None):
+def load_c_source(
+    path: str,
+    *,
+    max_functions: int | None = None,
+    min_string_length: int | None = None,
+    string_encodings: tuple[str, ...] | list[str] | None = None,
+    discover_functions: bool = True,
+):
     """Compile C to a temporary, non-executed ELF and run static analysis."""
     from analysis import CSourceAnalyzer
 
     print(f"[*] Loading C source: {_terminal_text(path)}")
     print("[*] Compiling a temporary ELF analysis artifact (the artifact will not be executed)…")
-    info = CSourceAnalyzer().analyze(path)
+    info = CSourceAnalyzer(
+        min_string_length=min_string_length,
+        string_encodings=string_encodings,
+    ).analyze(path)
     if info.compiled_sha256:
         print(f"[*] Compiled artifact SHA-256: {info.compiled_sha256}")
+    if not discover_functions:
+        _describe_static_analysis(info)
+        return info, None, []
     return _prepare_static_analysis(info, max_functions=max_functions)
 
 
@@ -143,10 +172,8 @@ def identify_file(path: str, *, offline: bool = False) -> int:
     return 2 if result.is_unknown else 0
 
 
-def _prepare_static_analysis(info, *, max_functions: int | None = None):
-    """Describe, disassemble, and enrich an already parsed static artifact."""
-    from analysis import Disassembler
-
+def _describe_static_analysis(info) -> None:
+    """Print bounded static metadata without requiring a disassembly backend."""
     print(
         f"[*] Format   : {_terminal_text(info.file_format)} "
         f"{_terminal_text(info.arch)} {info.bits}-bit  ({_terminal_text(info.os_target)})"
@@ -156,13 +183,36 @@ def _prepare_static_analysis(info, *, max_functions: int | None = None):
     print(f"[*] Sections  : [{section_names}]")
     print(f"[*] Imports   : {sum(len(i.functions) for i in info.imports)} functions "
           f"from {len(info.imports)} import source(s)")
-    print(f"[*] Strings   : {len(info.strings)} found")
+    string_analysis = getattr(info, "string_analysis", None)
+    if string_analysis is None:
+        print(f"[*] Strings   : {len(info.strings)} unique values found")
+    else:
+        retained = int(getattr(string_analysis, "retained_count", 0))
+        occurrences = sum(
+            int(getattr(record, "occurrence_count", 1))
+            for record in (getattr(string_analysis, "records", ()) or ())
+        )
+        truncated = " (retention limit reached after full scan)" if getattr(
+            string_analysis, "extraction_truncated", False
+        ) else ""
+        print(
+            f"[*] Strings   : {retained} records, {occurrences} retained occurrences, "
+            f"{len(info.strings)} unique values"
+            f"{truncated}"
+        )
 
     # Check for packing
     high_entropy = [s for s in info.sections if s.entropy > 7.0]
     if high_entropy:
         packed_names = ", ".join(_terminal_text(section.name, 120) for section in high_entropy)
         print(f"[!] Possible packing: [{packed_names}] (entropy > 7.0)")
+
+
+def _prepare_static_analysis(info, *, max_functions: int | None = None):
+    """Describe, disassemble, and enrich an already parsed static artifact."""
+    from analysis import Disassembler
+
+    _describe_static_analysis(info)
 
     print("[*] Discovering functions…")
     dis = Disassembler(info)
@@ -171,6 +221,250 @@ def _prepare_static_analysis(info, *, max_functions: int | None = None):
     print(f"[*] Found {len(addresses)} functions{cap_note}.")
 
     return info, dis, addresses
+
+
+def _string_record_document(record) -> dict:
+    """Serialize one trusted local record without losing occurrence metadata."""
+    address = getattr(record, "address", None)
+    entities = []
+    for entity in getattr(record, "entities", ()) or ():
+        if isinstance(entity, (list, tuple)) and len(entity) == 2:
+            kind, canonical_name = entity
+            entities.append(
+                {
+                    "kind": str(kind),
+                    "canonical_name": str(canonical_name),
+                }
+            )
+    return {
+        "id": str(getattr(record, "record_id", "")),
+        "value": str(getattr(record, "value", "")),
+        "encoding": str(getattr(record, "encoding", "unknown")),
+        "offset": int(getattr(record, "offset", 0)),
+        "address": address if isinstance(address, int) and not isinstance(address, bool) else None,
+        "byte_length": int(getattr(record, "byte_length", 0)),
+        "char_length": int(getattr(record, "char_length", 0)),
+        "categories": list(getattr(record, "categories", ()) or ()),
+        "confidence": str(getattr(record, "confidence", "unknown")),
+        "suspicion_score": int(getattr(record, "suspicion_score", 0)),
+        "reasons": list(getattr(record, "reasons", ()) or ()),
+        "description": str(getattr(record, "description", "")),
+        "entities": entities,
+        "section": getattr(record, "section", None),
+        "occurrence_count": int(getattr(record, "occurrence_count", 1)),
+        "occurrence_offsets": list(getattr(record, "occurrence_offsets", ()) or ()),
+        "occurrence_addresses": list(getattr(record, "occurrence_addresses", ()) or ()),
+        "truncated": bool(getattr(record, "truncated", False)),
+    }
+
+
+def build_string_report_document(
+    binary_info,
+    *,
+    category_filters: list[str] | tuple[str, ...] | None = None,
+    ai_report=None,
+) -> dict:
+    """Return the complete deterministic inventory and optional validated AI report."""
+    analysis = getattr(binary_info, "string_analysis", None)
+    if analysis is None:
+        raise CLIError("String intelligence is unavailable for this artifact")
+    requested_categories = {
+        str(category).strip().lower() for category in (category_filters or ()) if category
+    }
+    all_records = list(getattr(analysis, "records", ()) or ())
+    selected_records = [
+        record
+        for record in all_records
+        if not requested_categories
+        or requested_categories.intersection(
+            str(category).lower() for category in (getattr(record, "categories", ()) or ())
+        )
+    ]
+    category_counts = Counter(
+        str(category)
+        for record in all_records
+        for category in (getattr(record, "categories", ()) or ("uncategorized",))
+    )
+    value_truncated_count = sum(
+        bool(getattr(record, "truncated", False)) for record in all_records
+    )
+    raw_length = len(getattr(binary_info, "raw_data", b"") or b"")
+    scanned_bytes = int(getattr(analysis, "scanned_bytes", raw_length))
+    total_bytes = int(getattr(analysis, "total_bytes", raw_length))
+    coverage = {
+        "extracted_count": int(getattr(analysis, "extracted_count", len(all_records))),
+        "retained_count": int(getattr(analysis, "retained_count", len(all_records))),
+        "displayed_count": len(selected_records),
+        "display_filter_excluded_count": len(all_records) - len(selected_records),
+        "retention_filtered_count": int(
+            getattr(analysis, "filtered_count", 0)
+        ),
+        "extraction_truncated": bool(getattr(analysis, "extraction_truncated", False)),
+        "omitted_count": int(getattr(analysis, "omitted_count", 0)),
+        "count_is_lower_bound": bool(
+            getattr(analysis, "count_is_lower_bound", False)
+        ),
+        "coverage_reasons": list(getattr(analysis, "coverage_reasons", ()) or ()),
+        "value_truncated_count": value_truncated_count,
+        "scan_complete": scanned_bytes >= total_bytes,
+        "inventory_complete": bool(getattr(analysis, "complete", True)),
+        "scanned_bytes": scanned_bytes,
+        "total_bytes": total_bytes,
+    }
+    ai_document = None
+    if ai_report is not None:
+        converter = getattr(ai_report, "to_dict", None)
+        ai_document = converter() if callable(converter) else None
+        if not isinstance(ai_document, dict):
+            raise CLIError("String AI analysis did not produce a structured report")
+    return {
+        "_schema": "aidebug/strings/v1",
+        "_privacy_notice": (
+            "Extracted strings may contain credentials, tokens, customer data, paths, URLs, "
+            "and other sensitive evidence. The deterministic inventory is local; ai_analysis "
+            "is present only after an explicit model request."
+        ),
+        "binary": {
+            "filename": str(binary_info.filename),
+            "sha256": str(binary_info.sha256),
+            "format": str(binary_info.file_format),
+            "architecture": str(binary_info.arch),
+            "bits": int(binary_info.bits),
+            "os_target": str(binary_info.os_target),
+            "analysis_origin": str(
+                getattr(binary_info, "analysis_origin", "binary")
+            ),
+            "compiled_artifact_sha256": getattr(
+                binary_info, "compiled_sha256", None
+            ),
+        },
+        "coverage": coverage,
+        "filters": {"categories": sorted(requested_categories)},
+        "category_counts": dict(sorted(category_counts.items())),
+        # The canonical JSON inventory is never reduced by a display filter.
+        # This lets reports reproduce all retained evidence and prevents a UI
+        # view from being mistaken for extraction/AI coverage.
+        "strings": [_string_record_document(record) for record in all_records],
+        "ai_analysis": ai_document,
+    }
+
+
+def run_string_cli(
+    binary_info,
+    *,
+    analyzer=None,
+    analyze_with_ai: bool = False,
+    category_filters: list[str] | tuple[str, ...] | None = None,
+    output_path: str | None = None,
+) -> bool:
+    """Render deterministic string intelligence and optional whole-corpus AI triage."""
+    string_analysis = getattr(binary_info, "string_analysis", None)
+    if string_analysis is None:
+        raise CLIError("String intelligence is unavailable for this artifact")
+
+    ai_report = None
+    if analyze_with_ai:
+        if analyzer is None or not getattr(analyzer, "remote_enabled", False):
+            raise CLIError("AI string analysis requires a configured local or remote LLM provider")
+        destination = "a local model" if not getattr(analyzer, "transmits_evidence", True) else "the configured remote provider"
+        retained = len(getattr(string_analysis, "records", ()) or ())
+        print(
+            f"[!] Whole-string AI review will send up to {retained} retained string records to "
+            f"{destination} in bounded chunks. In the worst case this can require one request "
+            "per retained record plus a reducer. Strings can contain passwords, tokens, customer "
+            "data, and other sensitive evidence."
+        )
+
+        def show_progress(progress: dict) -> None:
+            attempted = int(progress.get("chunks_attempted", 0))
+            total_chunks = int(progress.get("chunks_total", 0))
+            failed = progress.get("failed_chunk")
+            if (
+                attempted == 1
+                or attempted == total_chunks
+                or attempted % 10 == 0
+                or failed is not None
+            ):
+                print(
+                    f"[*] String AI chunks: {attempted}/{total_chunks}; "
+                    f"validated records: {int(progress.get('records_reviewed', 0))}"
+                )
+
+        ai_report = analyzer.analyze_strings(
+            string_analysis,
+            binary_info,
+            progress_callback=show_progress,
+        )
+
+    document = build_string_report_document(
+        binary_info,
+        category_filters=category_filters,
+        ai_report=ai_report,
+    )
+    coverage = document["coverage"]
+    print(
+        "\n=== String Intelligence ===\n"
+        f"  Retained   : {coverage['retained_count']}\n"
+        f"  Displayed  : {coverage['displayed_count']}\n"
+        f"  Byte scan  : {coverage['scanned_bytes']}/{coverage['total_bytes']} "
+        f"({'complete' if coverage['scan_complete'] else 'partial'})\n"
+        f"  Omitted    : {coverage['omitted_count']} candidate(s) at retention cap\n"
+        f"  Long values: {coverage['value_truncated_count']} bounded preview(s)\n"
+        f"  Categories : "
+        + ", ".join(
+            f"{name}={count}" for name, count in document["category_counts"].items()
+        )
+    )
+    if output_path:
+        from reporting._io import atomic_write_json
+
+        destination = Path(output_path).expanduser()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(destination, document)
+        print(f"[+] Full string report → {_terminal_text(destination)}")
+    else:
+        requested_categories = set(document["filters"]["categories"])
+        displayed_records = [
+            record
+            for record in document["strings"]
+            if not requested_categories
+            or requested_categories.intersection(
+                str(category).lower() for category in record["categories"]
+            )
+        ]
+        for record in displayed_records:
+            address = record["address"]
+            location = f"VA 0x{address:x}" if address is not None else f"file+0x{record['offset']:x}"
+            categories = ",".join(record["categories"]) or "uncategorized"
+            print(
+                f"  {record['id']:<10} score={record['suspicion_score']:>3} "
+                f"{location:<20} {record['encoding']:<8} [{categories}] "
+                f"{_terminal_text(record['value'], 500)}"
+            )
+            if record["description"]:
+                print(f"             ↳ {_terminal_text(record['description'], 500)}")
+
+        if ai_report is not None:
+            report = document["ai_analysis"] or {}
+            ai_coverage = report.get("coverage", {})
+            print(
+                "\n=== AI String Triage ===\n"
+                f"  Assessment : {_terminal_text(report.get('overall_assessment', 'unknown'), 40)}\n"
+                f"  Confidence : {_terminal_text(report.get('confidence', 'low'), 20)}\n"
+                f"  Coverage   : {ai_coverage.get('reviewed_count', 0)}/"
+                f"{ai_coverage.get('retained_count', coverage['retained_count'])}\n"
+                f"  Summary    : {_terminal_text(report.get('executive_summary', ''), 1_000)}"
+            )
+            for finding in report.get("suspicious_findings", ()):
+                if isinstance(finding, dict):
+                    print(
+                        f"  [{_terminal_text(finding.get('severity', 'info'), 20)}] "
+                        f"{_terminal_text(finding.get('title', ''), 200)} — "
+                        f"{_terminal_text(finding.get('analysis', ''), 800)}"
+                    )
+            for limitation in report.get("limitations", ()):
+                print(f"  Limitation : {_terminal_text(limitation, 800)}")
+    return True
 
 
 def decompile_functions(binary_info, disassembler, addresses, executable=None) -> int:
@@ -867,6 +1161,7 @@ def run_tui(
     allow_bulk_analysis=False,
     max_bulk_functions=25,
     prior_sessions=None,
+    initial_strings=False,
 ):
     from ui import AIDebugApp
 
@@ -880,6 +1175,7 @@ def run_tui(
         allow_bulk_analysis=allow_bulk_analysis,
         max_bulk_functions=max_bulk_functions,
         prior_sessions=prior_sessions,
+        initial_strings=initial_strings,
     )
     app.run()
 
@@ -1134,6 +1430,55 @@ def _build_parser() -> argparse.ArgumentParser:
                              "Use this to attach to a VM/sandbox while keeping API traffic on the host.")
     parser.add_argument("--no-tui",         action="store_true", help="CLI output, no TUI")
     parser.add_argument(
+        "--strings",
+        action="store_true",
+        help=(
+            "Open the full String Intelligence workspace; with --no-tui, print the "
+            "deterministic inventory instead of analyzing functions"
+        ),
+    )
+    parser.add_argument(
+        "--analyze-strings",
+        "--strings-ai",
+        dest="analyze_strings",
+        action="store_true",
+        help=(
+            "Send the retained string inventory to the configured LLM in validated bounded "
+            "chunks; requires --strings --no-tui and remote use requires --accept-ai-cost"
+        ),
+    )
+    parser.add_argument(
+        "--min-string-length",
+        type=_positive_int,
+        default=config.MIN_STRING_LENGTH,
+        metavar="N",
+        help=(
+            f"Minimum extracted string length (default: {config.MIN_STRING_LENGTH}; "
+            f"maximum: {config.MAX_STRING_CHARS})"
+        ),
+    )
+    parser.add_argument(
+        "--string-encoding",
+        choices=("all", "ascii", "utf-8", "utf-16le", "utf-16be"),
+        default="all",
+        help="Encoding inventory to extract (default: all)",
+    )
+    parser.add_argument(
+        "--string-category",
+        action="append",
+        default=[],
+        metavar="CATEGORY",
+        help=(
+            "Display only records carrying CATEGORY in --strings CLI output; repeatable. "
+            "This does not hide records from an explicitly requested AI review"
+        ),
+    )
+    parser.add_argument(
+        "--strings-output",
+        metavar="FILE.json",
+        help="Write the complete structured string report as private JSON",
+    )
+    parser.add_argument(
         "--decompile",
         action="store_true",
         help=(
@@ -1248,6 +1593,20 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
     wants_report = args.report or args.yara or args.json_export
     identify = getattr(args, "identify", None)
     selected_input = args.binary or args.source
+    wants_strings = bool(getattr(args, "strings", False))
+    analyze_strings = bool(getattr(args, "analyze_strings", False))
+    strings_output = getattr(args, "strings_output", None)
+    string_categories = list(getattr(args, "string_category", []) or [])
+    string_encoding = getattr(args, "string_encoding", "all")
+    min_string_length = getattr(args, "min_string_length", config.MIN_STRING_LENGTH)
+    string_controls = bool(
+        wants_strings
+        or analyze_strings
+        or strings_output
+        or string_categories
+        or string_encoding != "all"
+        or min_string_length != config.MIN_STRING_LENGTH
+    )
     decompile = getattr(args, "decompile", None)
     decompile_all = getattr(args, "decompile_all", None)
     ghidra_headless = getattr(args, "ghidra_headless", None)
@@ -1279,6 +1638,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or ghidra_headless
             or history
             or debug_options
+            or string_controls
         )
         if conflicting:
             parser.error("--identify cannot be combined with analysis, debug, or reporting options")
@@ -1307,6 +1667,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or decompile_all
             or history
             or debug_options
+            or string_controls
         )
         if conflicting:
             parser.error("--learn cannot be combined with analysis, debug, or reporting options")
@@ -1318,6 +1679,44 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         parser.error("--binary and --source are mutually exclusive")
     if args.offline and args.accept_ai_cost:
         parser.error("--offline cannot be combined with --accept-ai-cost")
+    if min_string_length > config.MAX_STRING_CHARS:
+        parser.error(
+            f"--min-string-length cannot exceed {config.MAX_STRING_CHARS}"
+        )
+    invalid_categories = [
+        category
+        for category in string_categories
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", str(category))
+    ]
+    if invalid_categories:
+        parser.error("--string-category must be a simple category name")
+    if (
+        string_categories
+        or string_encoding != "all"
+        or min_string_length != config.MIN_STRING_LENGTH
+    ) and not wants_strings:
+        parser.error(
+            "--string-category, --string-encoding, and --min-string-length require --strings"
+        )
+    if string_categories and not args.no_tui:
+        parser.error("--string-category requires --strings --no-tui")
+    if string_controls and not selected_input:
+        parser.error("string-analysis options require --binary or --source")
+    if wants_strings and args.mode != "static":
+        parser.error("--strings supports static analysis only")
+    if wants_strings and wants_report:
+        parser.error(
+            "--strings cannot be combined with --report, --yara, or --json-export; "
+            "use --strings-output for the dedicated structured report"
+        )
+    if analyze_strings and not (wants_strings and args.no_tui):
+        parser.error("--analyze-strings requires --strings --no-tui")
+    if analyze_strings and args.offline:
+        parser.error("--analyze-strings requires a configured LLM and cannot use --offline")
+    if strings_output and not (wants_strings and args.no_tui):
+        parser.error("--strings-output requires --strings --no-tui")
+    if wants_strings and args.no_tui and (decompile or decompile_all or ghidra_headless):
+        parser.error("--strings --no-tui cannot be combined with decompilation options")
     if args.max_functions > config.MAX_FUNCTIONS_TO_DISCOVER:
         parser.error(
             f"--max-functions cannot exceed the discovery limit "
@@ -1341,6 +1740,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or decompile_all
             or ghidra_headless
             or debug_options
+            or string_controls
         )
         if conflicting:
             parser.error("--history cannot be combined with analysis, debug, or reporting options")
@@ -1363,6 +1763,7 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
             or decompile_all
             or ghidra_headless
             or debug_options
+            or string_controls
         )
         if conflicting:
             parser.error("--list-sessions cannot be combined with analysis or reporting options")
@@ -1419,16 +1820,23 @@ def _validate_args(args, parser: argparse.ArgumentParser) -> None:
         if args.source and input_path.suffix.lower() != ".c":
             parser.error("--source accepts files with the .c extension")
 
-        is_bulk = args.mode == "dynamic" or args.no_tui or wants_report
+        deterministic_strings_only = wants_strings and args.no_tui and not analyze_strings
+        is_bulk = (
+            args.mode == "dynamic"
+            or (args.no_tui and not deterministic_strings_only)
+            or wants_report
+            or analyze_strings
+        )
+        needs_analyzer = args.mode != "debug" and not deterministic_strings_only
         llm_settings = None
-        if not args.offline:
+        if not args.offline and needs_analyzer:
             try:
                 llm_settings = config.resolve_llm_settings()
             except ValueError as exc:
                 parser.error(str(exc))
         # Preserve the cost boundary even before credentials are configured.
         # Only an explicitly resolved local provider bypasses acknowledgement.
-        uses_billable_remote = not args.offline and not bool(
+        uses_billable_remote = needs_analyzer and not args.offline and not bool(
             llm_settings and llm_settings.get("is_local")
         )
         if is_bulk and uses_billable_remote and not args.accept_ai_cost:
@@ -1488,8 +1896,15 @@ def _execute(args) -> int:
         prepared_binary = None
         source_argument = getattr(args, "source", None)
         selected_input = args.binary or source_argument
+        string_cli = bool(getattr(args, "strings", False) and args.no_tui)
+        selected_encoding = getattr(args, "string_encoding", "all")
+        string_encodings = (
+            None if selected_encoding == "all" else (selected_encoding,)
+        )
         if selected_input:
-            if args.mode != "debug":
+            if args.mode != "debug" and (
+                not string_cli or bool(getattr(args, "analyze_strings", False))
+            ):
                 analyzer = _make_analyzer(args.offline)
             bulk_analysis = args.mode == "dynamic" or args.no_tui or wants_report
             discovery_limit = args.max_functions if bulk_analysis else None
@@ -1504,11 +1919,21 @@ def _execute(args) -> int:
                 prepared_binary = load_c_source(
                     os.fspath(Path(source_argument).expanduser()),
                     max_functions=discovery_limit,
+                    min_string_length=getattr(
+                        args, "min_string_length", config.MIN_STRING_LENGTH
+                    ),
+                    string_encodings=string_encodings,
+                    discover_functions=not string_cli,
                 )
             else:
                 prepared_binary = load_binary(
                     os.fspath(Path(args.binary).expanduser()),
                     max_functions=discovery_limit,
+                    min_string_length=getattr(
+                        args, "min_string_length", config.MIN_STRING_LENGTH
+                    ),
+                    string_encodings=string_encodings,
+                    discover_functions=not string_cli,
                 )
 
         if prepared_binary is not None:
@@ -1539,6 +1964,15 @@ def _execute(args) -> int:
                     program_args=args.debug_arg,
                     commands=args.debug_command,
                     gdb_path=args.gdb,
+                ) else 1
+
+            if string_cli:
+                return 0 if run_string_cli(
+                    binary_info,
+                    analyzer=analyzer,
+                    analyze_with_ai=bool(getattr(args, "analyze_strings", False)),
+                    category_filters=getattr(args, "string_category", ()),
+                    output_path=getattr(args, "strings_output", None),
                 ) else 1
 
         store = TraceStore(args.db)
@@ -1632,6 +2066,7 @@ def _execute(args) -> int:
                 allow_bulk_analysis=args.offline or args.accept_ai_cost,
                 max_bulk_functions=args.max_functions,
                 prior_sessions=prior_sessions,
+                initial_strings=bool(getattr(args, "strings", False)),
             )
 
         store.finish_session(session_id, "completed" if completed else "failed")

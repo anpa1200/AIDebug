@@ -34,6 +34,7 @@ from analysis.cfg import CFGBuilder, CFGTextRenderer
 from analysis.pe_structure import PEStructureAnalyzer
 from ui.hex_tui import HexViewerScreen
 from ui.pe_tui import PEStructureScreen
+from ui.strings_tui import StringsAnalysisScreen
 
 
 def _display_text(value, limit: int = 8_000) -> str:
@@ -217,6 +218,7 @@ Screen {
         Binding("ctrl+a",   "analyze_all",  "Analyze All",    show=True),
         Binding("ctrl+h",   "show_history", "History",        show=True),
         Binding("x",        "show_file_inspector", "Hex / PE", show=True),
+        Binding("s",        "show_strings", "Strings", show=True),
         Binding("p",        "show_file_inspector", "PE Structure", show=False),
         Binding("ctrl+f",   "focus_chat",   "Follow-up",       show=True),
         Binding("escape",   "blur_chat",    "Unfocus Chat",   show=False),
@@ -234,7 +236,8 @@ Screen {
                  session_id: int, function_addresses: list, *,
                  allow_bulk_analysis: bool = False,
                  max_bulk_functions: int = 25,
-                 prior_sessions: list | None = None):
+                 prior_sessions: list | None = None,
+                 initial_strings: bool = False):
         super().__init__()
         self.binary_info        = binary_info
         self.disassembler       = disassembler
@@ -248,6 +251,7 @@ Screen {
         self._followup_running = False
         self._allow_bulk_analysis = allow_bulk_analysis
         self._max_bulk_functions = max(1, max_bulk_functions)
+        self._initial_strings = bool(initial_strings)
         self._startup_warnings: list[str] = []
         self._cached_count = 0
         if prior_sessions is None:
@@ -343,6 +347,8 @@ Screen {
             )
         else:
             self._set_status(f"Loaded {len(self.function_addresses)} functions — select one to analyze.")
+        if self._initial_strings:
+            self.call_after_refresh(self.action_show_strings)
 
     def _populate_function_table(self):
         table: DataTable = self.query_one("#func-table")
@@ -856,6 +862,19 @@ Screen {
                 screen = HexViewerScreen(self.binary_info)
         except Exception as exc:
             self._set_status(f"Could not open file inspector: {exc}")
+            return
+        self.push_screen(screen)
+
+    def action_show_strings(self):
+        """Open the full occurrence-preserving String Intelligence workspace."""
+        try:
+            screen = StringsAnalysisScreen(
+                self.binary_info,
+                self.ai_analyzer,
+                ai_lock=self._ai_lock,
+            )
+        except Exception as exc:
+            self._set_status(f"Could not open String Intelligence: {exc}")
             return
         self.push_screen(screen)
 

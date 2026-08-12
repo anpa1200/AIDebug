@@ -9,7 +9,7 @@ recursive-include assets/screenshots *.png *.md
 recursive-include docs *.md
 recursive-include examples *.md *.py *.c *.json *.yar *.html
 recursive-include debugger/scripts *.js
-recursive-include analysis/data *.json *.java
+recursive-include analysis/data *.json *.java *.md
 recursive-include learning *.c *.h *.json *.md
 recursive-include scripts *.py *.sh
 recursive-include debian *

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "1200km-aidebug"
-version = "3.0.0"
+version = "3.1.0"
 description = "Malware triage, Ghidra reconstruction, active ELF debugging, and live assembly learning."
 readme = "README.md"
 license = "MIT"
@@ -82,7 +82,7 @@ include-package-data = true
 include = ["analysis*", "debugger*", "learning*", "reporting*", "storage*", "ui*"]
 
 [tool.setuptools.package-data]
-analysis = ["data/*.json", "data/*.java"]
+analysis = ["data/*.json", "data/*.java", "data/*.md"]
 debugger = ["scripts/*.js"]
 learning = ["cases/*.c", "cases/*.h", "cases/*.json", "cases/*.md"]
 

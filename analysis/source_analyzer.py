@@ -26,9 +26,18 @@ class CSourceAnalyzer:
 
     COMPILER_CANDIDATES = ("cc", "gcc", "clang")
 
-    def __init__(self, compiler: str | None = None, sandbox: str | None = None):
+    def __init__(
+        self,
+        compiler: str | None = None,
+        sandbox: str | None = None,
+        *,
+        min_string_length: int | None = None,
+        string_encodings: tuple[str, ...] | list[str] | None = None,
+    ):
         self.compiler = compiler or self._find_compiler()
         self.sandbox = sandbox
+        self.min_string_length = min_string_length
+        self.string_encodings = string_encodings
 
     @classmethod
     def _find_compiler(cls) -> str:
@@ -99,7 +108,10 @@ class CSourceAnalyzer:
             except OSError as exc:
                 raise RuntimeError(f"Unable to inspect compiled C artifact: {exc}") from exc
 
-            info = StaticAnalyzer().analyze(os.fspath(output_path))
+            info = StaticAnalyzer(
+                min_string_length=self.min_string_length,
+                string_encodings=self.string_encodings,
+            ).analyze(os.fspath(output_path))
 
         # Keep the selected source as the case identity while retaining the
         # compiled artifact hash for provenance. raw_data already contains the

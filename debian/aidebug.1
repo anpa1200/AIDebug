@@ -1,4 +1,4 @@
-.TH AIDEBUG 1 "August 2026" "aidebug 3.0.0" "User Commands"
+.TH AIDEBUG 1 "August 2026" "aidebug 3.1.0" "User Commands"
 .SH NAME
 aidebug \- AI-assisted malware reverse-engineering debugger
 .SH SYNOPSIS
@@ -9,6 +9,9 @@ AIDebug performs static and optional dynamic malware-analysis triage. It emits
 deterministic findings, analyst-review YARA candidates, versioned JSON with
 heuristic IOC strings, and HTML reports. Optional remote analysis can suggest
 MITRE ATT&CK mappings that require analyst validation.
+.SH DEVELOPMENT STATUS
+This manual tracks the AIDebug 3.1.0 source tree. Published artifacts remain
+immutable and should be verified against their matching release tag.
 .SH OPTIONS
 .TP
 .BR \-\-binary " " FILE
@@ -76,6 +79,37 @@ Use a remote Frida server in an operator-managed analysis target.
 .B \-\-no-tui
 Use CLI output instead of the terminal interface.
 .TP
+.B \-\-strings
+Open the paged String Intelligence workspace. With
+.BR \-\-no-tui ,
+print the deterministic string inventory instead of analyzing functions.
+.TP
+.B \-\-analyze-strings
+Send every retained string to the configured model in bounded, validated
+chunks. This option requires
+.BR \-\-strings
+and
+.BR \-\-no-tui .
+Remote endpoints also require
+.BR \-\-accept-ai-cost .
+.TP
+.BR \-\-min-string-length " " N
+Set the minimum extracted character count.
+.TP
+.BR \-\-string-encoding " " ENCODING
+Extract all supported encodings, or only ascii, utf-8, utf-16le, or utf-16be.
+.TP
+.BR \-\-string-category " " CATEGORY
+Filter the string CLI view by a deterministic category. Repeatable. The
+canonical JSON inventory and an explicitly requested AI review remain complete.
+.TP
+.BR \-\-strings-output " " FILE.json
+Write the complete retained string inventory and optional validated AI report
+as owner-only, atomically published JSON. Requires
+.BR \-\-strings
+and
+.BR \-\-no-tui .
+.TP
 .B \-\-offline
 Keep analysis local, use deterministic findings, and never call remote AI.
 This option is also available as
@@ -119,9 +153,14 @@ Print the AIDebug version and exit.
 .SH EXAMPLE
 .B aidebug --binary sample.exe --offline --no-tui --report --json-export --out-dir reports/
 .PP
-Remote AI analysis requires the optional AI dependencies and an Anthropic API
-key, and sends sample-derived evidence to the configured model. Bulk remote
-analysis also requires
+Extract strings locally without function discovery:
+.PP
+.B aidebug --binary sample.exe --offline --strings --no-tui --strings-output sample-strings.json
+.PP
+Remote AI analysis requires the optional AI dependencies and an explicitly
+configured Anthropic, OpenAI, Gemini, or Ollama endpoint. Non-loopback Ollama
+URLs are treated as remote. Remote analysis sends sample-derived evidence to
+the configured model. Bulk remote analysis also requires
 .BR \-\-accept-ai-cost .
 See the upstream safety documentation before use.
 .SH SAFETY

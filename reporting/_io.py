@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 def _restrict_permissions(fd: int, temporary_name: str) -> None:
@@ -52,6 +54,47 @@ def atomic_write_text(output_path: str | os.PathLike[str], content: str) -> str:
         _restrict_permissions(fd, temporary_name)
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, path)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+    return os.fspath(path)
+
+
+def atomic_write_json(output_path: str | os.PathLike[str], payload: Any) -> str:
+    """Stream JSON into a private sibling file and atomically publish it."""
+    path = Path(output_path)
+    directory = path.parent
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Report directory does not exist: {directory}")
+
+    fd, temporary_name = tempfile.mkstemp(
+        dir=directory,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        text=True,
+    )
+    try:
+        _restrict_permissions(fd, temporary_name)
+        encoder = json.JSONEncoder(
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=2,
+        )
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            for chunk in encoder.iterencode(payload):
+                handle.write(chunk)
+            handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_name, path)
