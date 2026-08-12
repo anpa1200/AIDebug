@@ -6,7 +6,17 @@ from types import SimpleNamespace
 import pytest
 
 from analysis.static_analyzer import ImportInfo
-from analysis.string_analyzer import SmartStringAnalyzer, StringAnalyzer, StringRecord
+from analysis.string_analyzer import (
+    SmartStringAnalyzer,
+    StringAnalyzer,
+    StringRecord,
+    normalize_domain_candidate,
+    parse_ip_candidate,
+    valid_config_assignment,
+    valid_domain_candidate,
+    valid_ip_candidate,
+    valid_url_candidate,
+)
 
 
 def by_value(analysis, value, encoding=None):
@@ -130,6 +140,171 @@ def test_ambiguous_lowercase_and_repeated_encodings_avoid_false_positives():
     domain = by_value(result, "foo.bar")
     assert "domain" in domain.categories
     assert domain.confidence == "medium"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "release-1.2.3.4-beta",
+        "build.1.2.3.4.dll",
+        "192.0.2.1.example",
+        "2001:db8::1.example",
+        "2001:db8::1%",
+        "[2001:db8::1",
+        "2001:db8::1]junk",
+        "999.999.999.999",
+        "::",
+    ],
+)
+def test_ip_detection_rejects_malformed_or_embedded_maximal_tokens(value):
+    record = by_value(StringAnalyzer(min_length=2, encodings=("ascii",)).analyze(value.encode()), value)
+
+    assert "ip_address" not in record.categories
+
+
+@pytest.mark.parametrize(
+    ("value", "version"),
+    [
+        ("192.0.2.44", 4),
+        ("192.0.2.44:8443", 4),
+        ("::1", 6),
+        ("2001:db8::5", 6),
+        ("[2001:db8::5]:443", 6),
+        ("fe80::1%eth0", 6),
+        ("[fe80::1%eth0]:443", 6),
+        ("::ffff:192.0.2.1", 6),
+    ],
+)
+def test_strict_ip_candidate_parser_accepts_complete_supported_tokens(value, version):
+    assert valid_ip_candidate(value, version)
+    assert parse_ip_candidate(value).version == version
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "[2001]",
+        "[192.0.2.1]",
+        "[2001:db8::1]:65536",
+        "[2001:db8::1]:abc",
+        "2001:db8::1%bad zone",
+        "2001:db8:::1",
+        "01.2.3.4",
+    ],
+)
+def test_strict_ip_candidate_parser_rejects_invalid_complete_tokens(value):
+    assert parse_ip_candidate(value) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "example.com",
+        "EXAMPLE.COM.",
+        "foo.bar",
+        "example.co.uk",
+        "xn--e1afmkfd.xn--p1ai",
+        "пример.рф",
+    ],
+)
+def test_offline_iana_domain_validation_accepts_valid_domains(value):
+    assert valid_domain_candidate(value)
+    assert normalize_domain_candidate(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "foo.notarealtld",
+        "report.txt",
+        "photo.png",
+        "1.2.3.4",
+        "a..com",
+        "-bad.com",
+        "bad-.com",
+        "a_b.com",
+        "a." + "b" * 64 + ".com",
+        "a.b",
+        "JP.Mz",
+        "dN5t.aw",
+    ],
+)
+def test_domain_classification_rejects_invalid_filenames_and_screenshot_fragments(value):
+    record = by_value(StringAnalyzer(min_length=2, encodings=("ascii",)).analyze(value.encode()), value)
+
+    assert "domain" not in record.categories
+
+
+def test_domain_classification_avoids_filename_alias_and_correlated_confidence():
+    result = StringAnalyzer(min_length=3, encodings=("ascii",)).analyze(
+        b"example.com\x00https://example.com\x00192.0.2.1\x00foo.bar"
+    )
+
+    domain = by_value(result, "example.com")
+    url = by_value(result, "https://example.com")
+    ip = by_value(result, "192.0.2.1")
+    assert domain.categories == ("domain",)
+    assert domain.confidence == "medium"
+    assert "filename" not in url.categories
+    assert url.confidence == "medium"
+    assert ip.confidence == "medium"
+    assert "domain" in by_value(result, "foo.bar").categories
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "PORT=443",
+        "debug:true",
+        "api_key = secret",
+        "endpoint=https://example.com/api",
+        "EMPTY=",
+        'message: "hello world"',
+    ],
+)
+def test_config_assignment_accepts_strict_env_ini_and_colon_forms(value):
+    assert valid_config_assignment(value)
+    record = by_value(StringAnalyzer(min_length=3, encodings=("ascii",)).analyze(value.encode()), value)
+    assert "config" in record.categories
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "key==value",
+        "key=>value",
+        "Error: failed",
+        "Content-Type: application/json",
+        "username: alice smith",
+        "not config: prose",
+        "foo:=bar",
+        "D_C=b",
+        "ABC=x",
+    ],
+)
+def test_config_assignment_rejects_logs_headers_prose_and_operator_mistakes(value):
+    assert not valid_config_assignment(value)
+    record = by_value(StringAnalyzer(min_length=3, encodings=("ascii",)).analyze(value.encode()), value)
+    assert "config" not in record.categories
+
+
+def test_config_assignment_rejects_non_ascii_keys_before_extraction():
+    assert not valid_config_assignment("ÅKEY=value")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("https://example.com/path", True),
+        ("http://192.0.2.1:8080/path", True),
+        ("http://[2001:db8::1]:8080/path", True),
+        ("http://-bad..com/path", False),
+        ("http://999.999.999.999/path", False),
+        ("http://foo/path", False),
+    ],
+)
+def test_shared_url_candidate_validator_requires_a_strict_host(value, expected):
+    assert valid_url_candidate(value) is expected
 
 
 def test_embedded_multiple_dll_and_api_entities_all_receive_descriptions():

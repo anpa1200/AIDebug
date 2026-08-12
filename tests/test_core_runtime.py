@@ -507,8 +507,14 @@ def test_local_ollama_transport_ignores_proxy_environment(monkeypatch):
 
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:8080")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
-    monkeypatch.setattr(ai_analyzer_module.openai, "DefaultHttpxClient", make_http_client)
-    monkeypatch.setattr(ai_analyzer_module.openai, "OpenAI", make_openai_client)
+    monkeypatch.setattr(
+        ai_analyzer_module,
+        "openai",
+        SimpleNamespace(
+            DefaultHttpxClient=make_http_client,
+            OpenAI=make_openai_client,
+        ),
+    )
 
     analyzer = AIAnalyzer(
         provider="ollama",
@@ -535,9 +541,13 @@ def test_remote_ollama_keeps_default_transport_and_remote_label(monkeypatch):
         return FakeOpenAIClient([])
 
     monkeypatch.setattr(
-        ai_analyzer_module.openai, "DefaultHttpxClient", reject_local_http_client
+        ai_analyzer_module,
+        "openai",
+        SimpleNamespace(
+            DefaultHttpxClient=reject_local_http_client,
+            OpenAI=make_openai_client,
+        ),
     )
-    monkeypatch.setattr(ai_analyzer_module.openai, "OpenAI", make_openai_client)
 
     analyzer = AIAnalyzer(
         provider="ollama",

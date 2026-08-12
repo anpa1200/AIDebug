@@ -112,9 +112,15 @@ _WEIGHTS = {
 }
 
 _URL_RE = re.compile(r"(?i)\b(?:https?|ftp)://[^\s<>\"']+")
-_DOMAIN_RE = re.compile(r"(?i)(?<![@\w-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})(?![\w-])")
+_DOMAIN_TOKEN_RE = re.compile(
+    r"(?iu)(?<![@\w.-])(?:[a-z0-9\u0080-\uffff](?:[a-z0-9\u0080-\uffff-]{0,61}"
+    r"[a-z0-9\u0080-\uffff])?\.)+[a-z0-9\u0080-\uffff-]{1,63}\.?(?![\w.-])"
+)
 _EMAIL_RE = re.compile(r"(?i)(?<![\w.+-])[\w.+-]{1,64}@[a-z0-9-]+(?:\.[a-z0-9-]+)+(?![\w.-])")
-_IP_TOKEN_RE = re.compile(r"(?<![\w:])(?:\[?[0-9a-fA-F:.%]+\]?)(?![\w:])")
+_IP_LIKE_RE = re.compile(
+    r"(?i)(?<![\w.\[\]%-])(?:\[[0-9a-f:.%]+\](?::\d+)?|[0-9a-f:.%]+)"
+    r"(?![\w.\[\]%-])"
+)
 _DLL_RE = re.compile(r"(?i)(?:^|[\\/])?([\w.+-]+(?:\.dll|\.dylib|\.so(?:\.\d+)*))\b")
 _REGISTRY_RE = re.compile(
     r"(?i)(?:HKEY_(?:LOCAL_MACHINE|CURRENT_USER|CLASSES_ROOT|USERS|CURRENT_CONFIG)|HKLM|HKCU|HKCR|HKU|HKCC)\\[^\r\n]+"
@@ -129,7 +135,44 @@ _PIPE_RE = re.compile(r"(?i)(?:\\\\\.\\pipe\\|\\Device\\NamedPipe\\)[^\s\\]+")
 _HASH_RE = re.compile(r"(?i)(?<![0-9a-f])(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})(?![0-9a-f])")
 _HEX_RE = re.compile(r"(?i)^(?:0x)?[0-9a-f]{16,}$")
 _B64_RE = re.compile(r"^(?:[A-Za-z0-9+/]{4}){4,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
-_CONFIG_RE = re.compile(r"(?i)^\s*[a-z_][\w.-]{1,63}\s*[:=]\s*\S+")
+_CONFIG_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}")
+_CONFIG_KEYS = frozenset({
+    "access_key",
+    "access_token",
+    "api_key",
+    "auth_token",
+    "base_url",
+    "database",
+    "db",
+    "debug",
+    "directory",
+    "empty",
+    "enabled",
+    "endpoint",
+    "file",
+    "host",
+    "hostname",
+    "key",
+    "log_level",
+    "message",
+    "mode",
+    "model",
+    "password",
+    "path",
+    "port",
+    "provider",
+    "proxy",
+    "pwd",
+    "retries",
+    "secret",
+    "server",
+    "timeout",
+    "token",
+    "trace",
+    "url",
+    "user",
+    "username",
+})
 _CREDENTIAL_RE = re.compile(
     r"(?i)\b(?:passw(?:or)?d|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|credential|bearer)\b"
 )
@@ -251,8 +294,255 @@ def _load_descriptions() -> tuple[dict[str, str], dict[str, str]]:
     return dlls, apis
 
 
+def _load_iana_tlds() -> frozenset[str]:
+    """Load the packaged IANA root-zone snapshot without network or host data."""
+    path = Path(__file__).with_name("data") / "iana_tlds.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        tlds = payload.get("tlds", ())
+    except (OSError, ValueError, TypeError):
+        tlds = ()
+    return frozenset(
+        str(value).strip().casefold()
+        for value in tlds
+        if isinstance(value, str) and value.strip()
+    )
+
+
 _DLL_DESCRIPTIONS, _API_DESCRIPTIONS = _load_descriptions()
 _KNOWN_APIS = frozenset(_API_DESCRIPTIONS)
+_IANA_TLDS = _load_iana_tlds()
+
+
+def normalize_domain_candidate(value: str) -> str | None:
+    """Return a validated ASCII IANA-rooted domain, or ``None``.
+
+    The check is intentionally offline. It validates syntax and a bundled root-zone
+    snapshot; it does not assert that the name is registered or reachable.
+    """
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if candidate.endswith("."):
+        candidate = candidate[:-1]
+    if not candidate or len(candidate) > 253 or ".." in candidate:
+        return None
+    try:
+        ascii_domain = candidate.encode("idna").decode("ascii").casefold()
+    except UnicodeError:
+        return None
+    if len(ascii_domain) > 253:
+        return None
+    labels = ascii_domain.split(".")
+    if len(labels) < 2 or labels[-1] not in _IANA_TLDS:
+        return None
+    if not all(
+        1 <= len(label) <= 63
+        and not label.startswith("-")
+        and not label.endswith("-")
+        and re.fullmatch(r"[a-z0-9-]+", label)
+        for label in labels
+    ):
+        return None
+    return ascii_domain
+
+
+def valid_domain_candidate(value: str) -> bool:
+    """Return whether ``value`` is a complete, IANA-rooted domain token."""
+    return normalize_domain_candidate(value) is not None
+
+
+def parse_ip_candidate(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse a complete IP token, optionally with a valid port or IPv6 zone."""
+    if not isinstance(value, str):
+        return None
+    token = value.strip()
+    if not token:
+        return None
+    host = token
+    bracketed = token.startswith("[")
+    if bracketed:
+        closing = token.find("]")
+        if closing < 0 or token.find("[", 1) >= 0 or token.find("]", closing + 1) >= 0:
+            return None
+        host = token[1:closing]
+        remainder = token[closing + 1 :]
+        if remainder:
+            if not remainder.startswith(":") or not remainder[1:].isdigit():
+                return None
+            port = int(remainder[1:])
+            if not 0 <= port <= 65535:
+                return None
+    elif token.count(".") == 3 and token.count(":") == 1:
+        host, port_text = token.rsplit(":", 1)
+        if not port_text.isdigit() or not 0 <= int(port_text) <= 65535:
+            return None
+    elif "]" in token or "[" in token:
+        return None
+
+    if "%" in host:
+        if ":" not in host or host.count("%") != 1:
+            return None
+        host, zone = host.rsplit("%", 1)
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", zone):
+            return None
+    try:
+        parsed = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    if bracketed and parsed.version != 6:
+        return None
+    if parsed.version == 6 and parsed.is_unspecified:
+        return None
+    return parsed
+
+
+def valid_ip_candidate(value: str, version: int | None = None) -> bool:
+    """Return whether ``value`` is a complete supported IP token."""
+    parsed = parse_ip_candidate(value)
+    return parsed is not None and (version is None or parsed.version == version)
+
+
+def iter_ip_candidates(value: str) -> tuple[str, ...]:
+    """Return complete, non-overlapping IP source tokens from untrusted text."""
+    if not isinstance(value, str) or value.count("[") != value.count("]"):
+        return ()
+    return tuple(
+        match.group()
+        for match in _IP_LIKE_RE.finditer(value)
+        if parse_ip_candidate(match.group()) is not None
+    )
+
+
+def valid_url_candidate(value: str) -> bool:
+    """Validate a complete HTTP(S)/FTP URL and its typed host syntax."""
+    if not isinstance(value, str):
+        return False
+    candidate = value.rstrip(".,);")
+    try:
+        parsed = urlsplit(candidate)
+        _ = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme.casefold() not in {"http", "https", "ftp"} or not parsed.hostname:
+        return False
+    hostname = parsed.hostname
+    return valid_ip_candidate(hostname) or valid_domain_candidate(hostname)
+
+
+def iter_domain_candidates(value: str, *, conservative: bool = True) -> tuple[str, ...]:
+    """Return strict IANA-rooted domain spans from untrusted text.
+
+    Conservative mode removes common filename and short screenshot/OCR fragments;
+    it is appropriate for deterministic triage. Syntax-only consumers may disable
+    that contextual filter while retaining maximal-token and IANA validation.
+    """
+    if not isinstance(value, str):
+        return ()
+    stripped = value.strip()
+    if _EMAIL_RE.fullmatch(stripped) or _DLL_RE.fullmatch(stripped):
+        return ()
+    exact_domain = stripped.rstrip(".")
+    if valid_domain_candidate(stripped):
+        labels = exact_domain.split(".")
+        if not conservative or not (
+            len(labels) == 2
+            and (len(exact_domain) < 7 or min(map(len, labels)) < 3)
+        ):
+            return (exact_domain,)
+    results: list[str] = []
+    for match in _DOMAIN_TOKEN_RE.finditer(value):
+        candidate = match.group().rstrip(".")
+        if not valid_domain_candidate(candidate):
+            continue
+        if conservative:
+            labels = candidate.split(".")
+            if len(labels) == 2 and (
+                len(candidate) < 7 or min(map(len, labels)) < 3
+            ):
+                continue
+            if _FILENAME_RE.fullmatch(stripped) or _PDB_RE.fullmatch(stripped):
+                continue
+            before = value[match.start() - 1] if match.start() else ""
+            if before in {"/", "\\"} and "://" not in value[: match.start()]:
+                continue
+        results.append(candidate)
+    return tuple(results)
+
+
+def valid_config_assignment(value: str) -> bool:
+    """Recognize one conservative environment/INI/YAML-style assignment line."""
+    if not isinstance(value, str) or "\n" in value or "\r" in value:
+        return False
+    line = value.strip()
+    if not line or line.startswith(("#", ";", "//")):
+        return False
+    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", line):
+        return False
+
+    def credible_key(key: str, *, colon: bool) -> bool:
+        folded = key.casefold()
+        if folded in _CONFIG_KEYS:
+            return True
+        if colon:
+            return False
+        return bool(re.fullmatch(r"_?[A-Z][A-Z0-9_]{3,63}", key))
+
+    def credible_value(raw_value: str, *, allow_empty: bool) -> bool:
+        if not raw_value:
+            return allow_empty
+        if raw_value.startswith(("=", ">", "<", ":")):
+            return False
+        return bool(re.search(r"[A-Za-z0-9]", raw_value))
+
+    equals = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.-]{0,63})\s*=\s*(.*)", line)
+    if equals:
+        key, raw_value = equals.groups()
+        if not credible_key(key, colon=False) or not credible_value(
+            raw_value, allow_empty=True
+        ):
+            return False
+        if key.casefold() not in _CONFIG_KEYS and raw_value and len(raw_value) < 2:
+            return False
+        return True
+
+    colon = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.-]{0,63})\s*:\s*(\S(?:.*\S)?)", line)
+    if not colon:
+        return False
+    key, raw_value = colon.groups()
+    # Bare prose, log prefixes, and HTTP headers are much more common than
+    # standalone YAML/config keys with these names.
+    if key.casefold() in {
+        "accept",
+        "authorization",
+        "content-length",
+        "content-type",
+        "cookie",
+        "date",
+        "error",
+        "exception",
+        "failed",
+        "fatal",
+        "host",
+        "location",
+        "referer",
+        "set-cookie",
+        "trace",
+        "user-agent",
+        "warning",
+    }:
+        return False
+    if not credible_key(key, colon=True) or not credible_value(
+        raw_value, allow_empty=False
+    ):
+        return False
+    if key.casefold() == "server" and not valid_url_candidate(raw_value):
+        return False
+    if re.search(r"\s", raw_value) and not (
+        len(raw_value) >= 2 and raw_value[0] == raw_value[-1] and raw_value[0] in {'"', "'"}
+    ):
+        return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -1402,7 +1692,7 @@ class StringAnalyzer:
             add("crypto_material", "Contains a PEM cryptographic-material header")
         if _PDB_RE.search(value):
             add("pdb_path", "References a Program Database debugging-symbol file")
-        if _FILENAME_RE.search(value):
+        if _FILENAME_RE.search(value) and not self._contains_domain(value):
             add("filename", "Contains a security-relevant filename")
         if _SCHEDULED_RE.search(value):
             add("scheduled_task", "References scheduled-task creation or configuration")
@@ -1424,7 +1714,7 @@ class StringAnalyzer:
             and self._base64_entropy(compact.removeprefix("0x")) >= 2.5
         ):
             add("hex", "Looks like hexadecimal-encoded data")
-        if _CONFIG_RE.search(value) and not urls and not looks_base64:
+        if valid_config_assignment(value):
             add("config", "Looks like a configuration assignment")
         if _DEBUG_RE.search(value):
             add("debug", "Contains debugging or tracing terminology")
@@ -1434,13 +1724,43 @@ class StringAnalyzer:
             add("text", "Printable string")
 
         categories = tuple(category for category in CATEGORY_ORDER if category in matched)
+        category_families = {
+            category: (
+                "network_location"
+                if category in {"url", "domain", "ip_address", "ipv4", "ipv6"}
+            else "path" if category in {
+                "registry_key", "named_pipe", "device_path", "unc_path", "windows_path",
+                "posix_path", "pdb_path", "filename",
+            }
+            else "execution" if category in {
+                "powershell", "command", "service", "scheduled_task", "persistence",
+            }
+            else "configuration" if category in {"config", "debug", "error"}
+            else category
+            )
+            for category in categories
+            if category != "text"
+        }
+        signal_families = set(category_families.values())
+        family_weights = {
+            family: max(
+                _WEIGHTS[category]
+                for category, category_family in category_families.items()
+                if category_family == family
+            )
+            for family in signal_families
+        }
         score = min(
-            100, max((_WEIGHTS[c] for c in categories), default=0) + min(30, 5 * (len(categories) - 1))
+            100,
+            max(family_weights.values(), default=0)
+            + min(30, 5 * max(0, len(signal_families) - 1)),
         )
-        # Several independent signals should increase confidence without claiming that
-        # a string is malicious; suspicion_score expresses triage priority only.
+        # Several independent signal families should increase confidence without
+        # claiming that aliases for one observation are separate evidence.
         confidence = (
-            "high" if imported_any or len(categories) >= 2 else "medium" if categories != ("text",) else "low"
+            "high" if imported_any or len(signal_families) >= 2
+            else "medium" if signal_families
+            else "low"
         )
         description = " ".join(dict.fromkeys(descriptions))
         if not description:
@@ -1449,11 +1769,7 @@ class StringAnalyzer:
 
     @staticmethod
     def _valid_url(value: str) -> bool:
-        try:
-            parsed = urlsplit(value.rstrip(".,);]"))
-            return parsed.scheme.casefold() in {"http", "https", "ftp"} and bool(parsed.hostname)
-        except ValueError:
-            return False
+        return valid_url_candidate(value)
 
     @staticmethod
     def _contains_ip(value: str) -> bool:
@@ -1461,53 +1777,15 @@ class StringAnalyzer:
 
     @staticmethod
     def _ip_versions(value: str) -> set[int]:
-        versions: set[int] = set()
-        for token in _IP_TOKEN_RE.findall(value):
-            candidate = token.strip('[]().,;"')
-            if candidate.count(".") == 3 and candidate.count(":") == 1:
-                host, port = candidate.rsplit(":", 1)
-                if port.isdigit() and 0 <= int(port) <= 65535:
-                    candidate = host
-            if candidate.count(".") != 3 and ":" not in candidate:
-                continue
-            if "%" in candidate:
-                candidate = candidate.split("%", 1)[0]
-            try:
-                versions.add(ipaddress.ip_address(candidate).version)
-            except ValueError:
-                continue
-        return versions
+        return {
+            parsed.version
+            for token in iter_ip_candidates(value)
+            if (parsed := parse_ip_candidate(token)) is not None
+        }
 
     @staticmethod
     def _contains_domain(value: str) -> bool:
-        # A syntactic DNS check intentionally rejects common filename extensions;
-        # otherwise ordinary strings such as cmd.exe and report.txt become IOCs.
-        file_suffixes = {
-            "bin",
-            "cfg",
-            "conf",
-            "dat",
-            "dll",
-            "dylib",
-            "exe",
-            "ini",
-            "jar",
-            "json",
-            "log",
-            "pdb",
-            "ps1",
-            "py",
-            "sh",
-            "so",
-            "sys",
-            "tmp",
-            "txt",
-            "xml",
-        }
-        for match in _DOMAIN_RE.finditer(value):
-            if match.group().rsplit(".", 1)[-1].casefold() not in file_suffixes:
-                return True
-        return False
+        return bool(iter_domain_candidates(value))
 
     @staticmethod
     def _base64_entropy(value: str) -> float:
@@ -1566,4 +1844,18 @@ class StringAnalyzer:
 # A discoverable alias for callers that prefer the feature name over the short class name.
 SmartStringAnalyzer = StringAnalyzer
 
-__all__ = ["CATEGORY_ORDER", "SmartStringAnalysis", "SmartStringAnalyzer", "StringAnalyzer", "StringRecord"]
+__all__ = [
+    "CATEGORY_ORDER",
+    "SmartStringAnalysis",
+    "SmartStringAnalyzer",
+    "StringAnalyzer",
+    "StringRecord",
+    "normalize_domain_candidate",
+    "iter_domain_candidates",
+    "iter_ip_candidates",
+    "parse_ip_candidate",
+    "valid_config_assignment",
+    "valid_domain_candidate",
+    "valid_ip_candidate",
+    "valid_url_candidate",
+]

@@ -82,7 +82,7 @@ include-package-data = true
 include = ["analysis*", "debugger*", "learning*", "reporting*", "storage*", "ui*"]
 
 [tool.setuptools.package-data]
-analysis = ["data/*.json", "data/*.java"]
+analysis = ["data/*.json", "data/*.java", "data/*.md"]
 debugger = ["scripts/*.js"]
 learning = ["cases/*.c", "cases/*.h", "cases/*.json", "cases/*.md"]
 

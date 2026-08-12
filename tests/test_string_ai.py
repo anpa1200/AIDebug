@@ -772,3 +772,36 @@ def test_ioc_grounding_accepts_punctuation_delimited_exact_spans(
     candidate, source, ioc_type
 ):
     assert AIAnalyzer._ioc_is_grounded(candidate, source, ioc_type) is True
+
+
+@pytest.mark.parametrize(
+    ('candidate', 'source', 'ioc_type'),
+    [
+        ('::', '!::\\"g', 'ipv6'),
+        ('1.2.3.4', 'release-1.2.3.4-beta', 'ipv4'),
+        ('1.2.3.4', 'build.1.2.3.4.dll', 'ipv4'),
+        ('192.0.2.1', '192.0.2.1.example', 'ipv4'),
+        ('2001:db8::1', '[2001:db8::1', 'ipv6'),
+        ('2001:db8::1', '2001:db8::1]junk', 'ipv6'),
+        ('JP.Mz', 'JP.Mz', 'domain'),
+        ('dN5t.aw', 'dN5t.aw!-', 'domain'),
+        ('photo.png', 'photo.png', 'domain'),
+    ],
+)
+def test_ioc_grounding_reuses_strict_deterministic_candidate_rules(
+    candidate, source, ioc_type
+):
+    assert AIAnalyzer._ioc_is_grounded(candidate, source, ioc_type) is False
+
+
+@pytest.mark.parametrize(
+    ('candidate', 'source', 'ioc_type'),
+    [
+        ('192.0.2.1', 'connect (192.0.2.1)', 'ipv4'),
+        ('2001:db8::1', 'connect [2001:db8::1]:443', 'ipv6'),
+        ('example.com', 'connect example.com now', 'domain'),
+        ('https://example.com/path', 'GET https://example.com/path', 'url'),
+    ],
+)
+def test_ioc_grounding_accepts_shared_strict_candidates(candidate, source, ioc_type):
+    assert AIAnalyzer._ioc_is_grounded(candidate, source, ioc_type) is True

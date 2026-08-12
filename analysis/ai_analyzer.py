@@ -1,11 +1,9 @@
-import ipaddress
 import json
 import math
 import re
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
 
 try:
     import anthropic
@@ -21,6 +19,13 @@ import config
 
 from .disassembler import Function
 from .static_analyzer import BinaryInfo
+from .string_analyzer import (
+    iter_domain_candidates,
+    iter_ip_candidates,
+    normalize_domain_candidate,
+    parse_ip_candidate,
+    valid_url_candidate,
+)
 
 _STRING_REPORT_FINDING_LIMIT = 256
 _STRING_REPORT_RELATIONSHIP_LIMIT = 256
@@ -1747,40 +1752,26 @@ class AIAnalyzer:
             return False
 
         if ioc_type in {'ipv4', 'ipv6'}:
-            try:
-                parsed_ip = ipaddress.ip_address(candidate.strip('[]'))
-            except ValueError:
+            parsed_ip = parse_ip_candidate(candidate)
+            if parsed_ip is None or parsed_ip.version != (
+                4 if ioc_type == 'ipv4' else 6
+            ):
                 return False
-            return parsed_ip.version == (4 if ioc_type == 'ipv4' else 6)
-
-        if ioc_type == 'url':
-            try:
-                parsed_url = urlsplit(candidate)
-                # Accessing .port performs strict numeric/range validation.
-                _ = parsed_url.port
-            except ValueError:
-                return False
-            return parsed_url.scheme.casefold() in {'http', 'https', 'ftp'} and bool(
-                parsed_url.hostname
+            return any(
+                parse_ip_candidate(source_token) == parsed_ip
+                for source_token in iter_ip_candidates(source)
             )
 
+        if ioc_type == 'url':
+            return valid_url_candidate(candidate)
+
         if ioc_type == 'domain':
-            domain = candidate.rstrip('.')
-            if len(domain) > 253 or any(character in domain for character in '/\\@ :'):
+            normalized = normalize_domain_candidate(candidate)
+            if normalized is None:
                 return False
-            labels = domain.split('.')
-            if len(labels) < 2:
-                return False
-            try:
-                ascii_labels = [label.encode('idna').decode('ascii') for label in labels]
-            except UnicodeError:
-                return False
-            return all(
-                1 <= len(label) <= 63
-                and not label.startswith('-')
-                and not label.endswith('-')
-                and re.fullmatch(r'[A-Za-z0-9-]+', label)
-                for label in ascii_labels
+            return any(
+                normalize_domain_candidate(source_token) == normalized
+                for source_token in iter_domain_candidates(source)
             )
 
         if ioc_type == 'email':

@@ -60,11 +60,22 @@ from .string_analyzer import (
     SmartStringAnalyzer,
     StringAnalyzer,
     StringRecord,
+    iter_domain_candidates,
+    iter_ip_candidates,
+    normalize_domain_candidate,
+    parse_ip_candidate,
+    valid_config_assignment,
+    valid_domain_candidate,
+    valid_ip_candidate,
+    valid_url_candidate,
 )
 
 __all__ = [
     'StaticAnalyzer', 'CSourceAnalyzer', 'BinaryInfo', 'SectionInfo', 'ImportInfo',
     'StringAnalyzer', 'SmartStringAnalyzer', 'SmartStringAnalysis', 'StringRecord',
+    'iter_domain_candidates', 'iter_ip_candidates', 'normalize_domain_candidate',
+    'parse_ip_candidate', 'valid_config_assignment', 'valid_domain_candidate',
+    'valid_ip_candidate', 'valid_url_candidate',
     'FileTypeDetector', 'FileTypeResult',
     'Disassembler', 'Function', 'Instruction',
     'GhidraDecompiler', 'DecompiledFunction', 'DecompilerError',

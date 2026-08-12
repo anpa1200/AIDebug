@@ -46,6 +46,8 @@ done
 "$work_dir/venv/bin/python" -c \
   "from importlib.resources import files; assert files('analysis').joinpath('data/flirt_sigs.json').is_file()"
 "$work_dir/venv/bin/python" -c \
+  "from importlib.resources import files; assert files('analysis').joinpath('data/iana_tlds.json').is_file()"
+"$work_dir/venv/bin/python" -c \
   "from importlib.resources import files; assert files('analysis').joinpath('data/string_descriptions.json').is_file()"
 "$work_dir/venv/bin/python" -c \
   "from analysis.string_analyzer import StringAnalyzer; record = StringAnalyzer(min_length=4, encodings=('ascii',)).analyze(b'kernel32.dll\\0').records[0]; assert record.entities == (('dll', 'kernel32.dll'),) and record.description"

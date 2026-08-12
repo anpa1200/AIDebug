@@ -161,6 +161,12 @@ characters; adversarial overflows are reported in the record reasons.
 Detection is multi-label. A single value can simultaneously be a DLL, Windows
 path, URL, IP address, registry key, command, PowerShell fragment, named pipe,
 hash, credential candidate, user agent, or another supported evidence type.
+Domain candidates are IDNA-normalized and checked against a packaged offline
+IANA root-zone snapshot; IP addresses must occupy a complete valid token, and
+configuration assignments must match a conservative full-line grammar. This
+prevents short binary fragments from being promoted merely because they contain
+a dot, colon, or equals sign. Related labels share one confidence family, so
+`ip_address` plus `ipv6` is not treated as two independent observations.
 Known DLLs and APIs receive short neutral capability descriptions; unknown
 names receive an explicit unverified fallback instead of a guessed purpose.
 An extracted name is evidence of presence, not proof that code invoked it or

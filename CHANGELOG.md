@@ -16,6 +16,10 @@
   circuit breaking, complete coverage accounting, and structured reduction.
 - Treat non-loopback Ollama endpoints as remote evidence transfers and require
   the same cost/privacy acknowledgement as other remote providers.
+- Hardened domain, IP-address, and configuration detection against short binary
+  fragments, malformed maximal tokens, filename overlap, and correlated-category
+  confidence inflation. Deterministic and AI IOC checks share the same offline,
+  IANA-rooted validation rules.
 
 ## 3.0.0 - 2026-08-10
 
