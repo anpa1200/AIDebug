@@ -243,9 +243,11 @@ mitigation flags are not proof of effective runtime policy.
 These articles provide the long-form workflows and screenshots that complement
 the repository documentation:
 
+- [AIDebug 3.1 Full Release Review: From Binary Intake to String Intelligence](https://1200km.com/articles/read/2026/2026-08-13-aidebug-3-1-full-release-review/) — the complete evidence-first workflow across file identification, PE and ELF triage, functions, control flow, strings, Ghidra, optional AI review, controlled debugging, history, and reports.
+- [Strings Analysis for Malware Analysis: Turning Binary Text into Defensible Hypotheses](https://1200km.com/articles/read/2026/2026-08-12-strings-analysis-for-malware-analysis-turning-391815ee35e2/) — occurrence-aware extraction, conservative categorization, IOC validation, cross-references, and AIDebug String Intelligence.
 - [PE File Structure for Malware Analysis: A Practical Guide](https://1200km.com/articles/read/2026/2026-08-10-pe-file-structure-for-malware-analysis-d93acb97d9f3/) — PE layout, loader behavior, headers, sections, imports, exports, resources, relocations, TLS, mitigations, signatures, overlays, and .NET metadata with AIDebug.
 - [Assembly for Malware Analysis: A Practical x86/x64 Guide](https://1200km.com/articles/read/2026/2026-08-09-assembly-for-malware-analysis-be0679241940/) — registers, flags, calling conventions, control flow, Windows APIs, and hands-on AIDebug learning cases.
-- [AI-Powered Malware Debugger That Explains Every Function It Sees](https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a) — the original AIDebug project walkthrough.
+- [AI-Powered Malware Debugger That Explains Every Function It Sees](https://1200km.com/articles/read/2026/2026-03-14-ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a/) — the locally preserved original AIDebug project walkthrough.
 
 ## Learning Mode
 
