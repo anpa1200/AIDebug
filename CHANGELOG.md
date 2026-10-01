@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Replaced substring command matching and entropy-only Base64 guesses with
+  context-aware command tokens and canonical decode validation.
+- Added an offline Microsoft-backed catalog with 18,276 Win32 API names and 368
+  modules, including neutral capability descriptions and function mappings.
+- Added one bounded repair attempt for AI chunk schema failures and actionable,
+  credential-redacted failure diagnostics in the String Intelligence workspace.
+
 ## 3.1.0 - 2026-08-11
 
 - Added whole-file ASCII, UTF-8, UTF-16LE, and UTF-16BE string extraction with

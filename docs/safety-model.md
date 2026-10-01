@@ -119,7 +119,7 @@ and deterministic head/tail evidence make the loss explicit. The deterministic
 report distinguishes extracted, retained, filtered, long-value-truncated, and
 retention-truncated coverage. Whole-string AI review has separate item,
 character, response-token, reducer, and request safeguards; failed chunks are
-reported and force an
+reported with bounded credential-redacted diagnostics and force an
 `unknown` aggregate assessment rather than a safety conclusion. Symbol-table
 scanning is capped at 100,000 records, with
 at most 50,000 import and 50,000 export candidates retained. Discovery is capped

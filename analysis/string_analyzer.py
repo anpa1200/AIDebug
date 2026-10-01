@@ -7,6 +7,8 @@ and imported APIs are annotated rather than silently mixed with extracted bytes.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import codecs
 import hashlib
 import ipaddress
@@ -181,8 +183,16 @@ _DEBUG_RE = re.compile(r"(?i)\b(?:debug|trace|assert(?:ion)?|breakpoint|stack tr
 _POWERSHELL_RE = re.compile(
     r"(?i)(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|-(?:enc|encodedcommand)\b|invoke-(?:expression|webrequest)|downloadstring\s*\()"
 )
-_COMMAND_RE = re.compile(
-    r"(?i)(?<![\w.-])(?:cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh|wscript|cscript|rundll32|regsvr32|mshta|certutil|bitsadmin|schtasks|sc(?:\.exe)?|wmic|bash|sh|zsh|curl|wget|nc|netcat|chmod|chown|sudo|systemctl)\b"
+_LONG_COMMAND_RE = re.compile(
+    r"(?i)(?<![\w.-])(?:cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh(?:\.exe)?|"
+    r"wscript(?:\.exe)?|cscript(?:\.exe)?|rundll32(?:\.exe)?|regsvr32(?:\.exe)?|"
+    r"mshta(?:\.exe)?|certutil(?:\.exe)?|bitsadmin(?:\.exe)?|schtasks(?:\.exe)?|"
+    r"wmic(?:\.exe)?|curl(?:\.exe)?|wget(?:\.exe)?|netcat(?:\.exe)?|chmod|chown|"
+    r"sudo|systemctl)(?=$|[\t ])"
+)
+_SHORT_COMMAND_RE = re.compile(
+    r"(?i)^\s*(?:(?:sudo|exec)\s+)?(?:sc(?:\.exe)?|nc(?:\.exe)?|sh|bash|zsh)"
+    r"(?=$|[\t ])"
 )
 _IDENTIFIER_RE = re.compile(r"(?<![\w@$?])[A-Za-z_][A-Za-z0-9_@$?]{2,127}(?![\w@$?])")
 _USER_AGENT_RE = re.compile(
@@ -284,13 +294,25 @@ def _bounded_match_spans(
 
 
 def _load_descriptions() -> tuple[dict[str, str], dict[str, str]]:
-    path = Path(__file__).with_name("data") / "string_descriptions.json"
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        payload = {}
-    dlls = {str(k).casefold(): str(v) for k, v in payload.get("dlls", {}).items()}
-    apis = {str(k).casefold(): str(v) for k, v in payload.get("apis", {}).items()}
+    data_dir = Path(__file__).with_name("data")
+    dlls: dict[str, str] = {}
+    apis: dict[str, str] = {}
+    # Load the large Microsoft metadata/docs snapshot first, then let the small
+    # analyst-reviewed catalog override entries where security-specific wording is
+    # more useful. Both files are immutable package data; analysis stays offline.
+    for filename in ("microsoft_win32_catalog.json", "string_descriptions.json"):
+        try:
+            payload = json.loads((data_dir / filename).read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        for name, detail in payload.get("dlls", {}).items():
+            description = detail.get("description") if isinstance(detail, Mapping) else detail
+            if isinstance(description, str) and description.strip():
+                dlls[str(name).casefold()] = description.strip()
+        for name, detail in payload.get("apis", {}).items():
+            description = detail.get("description") if isinstance(detail, Mapping) else detail
+            if isinstance(description, str) and description.strip():
+                apis[str(name).casefold()] = description.strip()
     return dlls, apis
 
 
@@ -1677,7 +1699,7 @@ class StringAnalyzer:
             )
         if _POWERSHELL_RE.search(value):
             add("powershell", "Contains PowerShell execution syntax")
-        if _COMMAND_RE.search(value):
+        if self._contains_command(value):
             add("command", "Contains a shell or system command")
         if _SERVICE_RE.search(value):
             add("service", "References Windows service-control behavior")
@@ -1788,6 +1810,18 @@ class StringAnalyzer:
         return bool(iter_domain_candidates(value))
 
     @staticmethod
+    def _contains_command(value: str) -> bool:
+        """Recognize executable command tokens without matching random fragments.
+
+        Short shell/tool names such as ``sc``, ``nc``, and ``sh`` are far too
+        common inside binary noise. They are accepted only as the first command
+        token (optionally following ``sudo`` or ``exec``). Longer executable names
+        may occur in surrounding prose, but still require whitespace or end-of-line
+        after the complete token.
+        """
+        return bool(_LONG_COMMAND_RE.search(value) or _SHORT_COMMAND_RE.search(value))
+
+    @staticmethod
     def _base64_entropy(value: str) -> float:
         counts = Counter(value.rstrip("="))
         length = sum(counts.values())
@@ -1797,17 +1831,47 @@ class StringAnalyzer:
 
     @classmethod
     def _looks_base64(cls, value: str) -> bool:
-        if not _B64_RE.fullmatch(value) or cls._base64_entropy(value) < 3.2:
+        if not _B64_RE.fullmatch(value):
             return False
-        classes = sum(
-            (
-                any(char.islower() for char in value),
-                any(char.isupper() for char in value),
-                any(char.isdigit() for char in value),
-                any(char in "+/=" for char in value),
-            )
+        # A mixed-case identifier such as CreateDirectoryA is legal Base64 syntax,
+        # but syntax and Shannon entropy do not make it encoded data. Require an
+        # exact decoder round-trip and either explicit Base64 structure or coherent
+        # decoded text/file bytes. Pure alphabetic, unpadded values remain ambiguous
+        # identifiers and are deliberately rejected.
+        if value.isalpha() and "=" not in value:
+            return False
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError):
+            return False
+        if len(decoded) < 8:
+            return False
+        canonical = base64.b64encode(decoded).decode("ascii")
+        if canonical.rstrip("=") != value.rstrip("="):
+            return False
+
+        magic_prefixes = (
+            b"MZ", b"\x7fELF", b"PK\x03\x04", b"\x1f\x8b", b"%PDF-",
+            b"\x89PNG\r\n\x1a\n", b"-----BEGIN ",
         )
-        return classes >= 2
+        if decoded.startswith(magic_prefixes):
+            return True
+        try:
+            text = decoded.decode("utf-8")
+        except UnicodeDecodeError:
+            text = ""
+        if text:
+            printable = sum(character.isprintable() or character in "\r\n\t" for character in text)
+            # Entropy is used as a rejection signal for short incoherent text, never
+            # as affirmative proof that a value is Base64.
+            coherent = printable / len(text) >= 0.90
+            has_structure = any(character.isspace() or not character.isalnum() for character in text)
+            if coherent and (has_structure or "=" in value):
+                return True
+        # Opaque high-entropy data remains ambiguous. Entropy alone is never used
+        # to promote a string into a semantic category because compressed,
+        # encrypted, random, and ordinary binary fragments overlap heavily.
+        return False
 
     @staticmethod
     def _dll_description(name: str) -> str:

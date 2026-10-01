@@ -144,6 +144,58 @@ def test_ambiguous_lowercase_and_repeated_encodings_avoid_false_positives():
 
 @pytest.mark.parametrize(
     "value",
+    ["sc*%", "4X        nC", "9^<NC", 'G"SC:Q', "K7=nC", "Sc*%", "sh)蘿]", "zsh`W", "T{sh!"],
+)
+def test_short_command_names_do_not_match_random_binary_fragments(value):
+    assert not StringAnalyzer._contains_command(value)
+
+
+@pytest.mark.parametrize("value", ["sc query service", "nc 192.0.2.1 4444", "sh script.sh"])
+def test_short_commands_require_first_token_context(value):
+    record = by_value(StringAnalyzer(min_length=2, encodings=("ascii",)).analyze(value.encode()), value)
+
+    assert "command" in record.categories
+
+
+@pytest.mark.parametrize("value", ["CreateDirectoryA", "CreateDirectoryW"])
+def test_microsoft_api_identifiers_are_not_mislabeled_as_base64(value):
+    record = by_value(StringAnalyzer(min_length=4, encodings=("ascii",)).analyze(value.encode()), value)
+
+    assert "api" in record.categories
+    assert "base64" not in record.categories
+    assert record.entities == (("api", value),)
+    assert "Storage / File System" in record.description
+
+
+def test_base64_requires_canonical_decode_not_entropy_alone():
+    values = [
+        "SGVsbG8sIHdvcmxkIQ==",
+        "QUJDREVGR0hJSktMTU5PUA==",
+        "CreateDirectoryA",
+        "HighEntropyIdentifierX9Y7Z5",
+    ]
+    result = StringAnalyzer(min_length=4, encodings=("ascii",)).analyze(
+        b"\0".join(value.encode() for value in values)
+    )
+
+    assert "base64" in by_value(result, values[0]).categories
+    assert "base64" in by_value(result, values[1]).categories
+    assert "base64" not in by_value(result, values[2]).categories
+    assert "base64" not in by_value(result, values[3]).categories
+
+
+def test_large_microsoft_catalog_detects_less_common_documented_api_and_dll():
+    value = "WNetAddConnection2W MPR.dll"
+    record = by_value(StringAnalyzer(min_length=4, encodings=("ascii",)).analyze(value.encode()), value)
+
+    assert (("api", "WNetAddConnection2W"), ("dll", "MPR.dll")) == tuple(
+        sorted(record.entities, key=lambda item: (item[0], item[1]))
+    )
+    assert "Network Management / WNet" in record.description
+
+
+@pytest.mark.parametrize(
+    "value",
     [
         "release-1.2.3.4-beta",
         "build.1.2.3.4.dll",

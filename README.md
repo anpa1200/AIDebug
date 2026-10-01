@@ -167,8 +167,15 @@ configuration assignments must match a conservative full-line grammar. This
 prevents short binary fragments from being promoted merely because they contain
 a dot, colon, or equals sign. Related labels share one confidence family, so
 `ip_address` plus `ipv6` is not treated as two independent observations.
-Known DLLs and APIs receive short neutral capability descriptions; unknown
-names receive an explicit unverified fallback instead of a guessed purpose.
+Known Windows DLLs and APIs are matched against an offline Microsoft-backed
+catalog containing 18,276 API names and 368 modules, with neutral capability
+descriptions and function-to-module mappings. Analyst-reviewed security wording
+overrides selected entries; unknown imported names receive an explicit
+unverified fallback instead of a guessed purpose. Command detection requires
+complete executable tokens and restricts ambiguous short names such as `sc`,
+`nc`, and `sh` to command-leading context. Base64 requires a canonical decode
+and coherent decoded evidence; alphabet membership or high entropy alone is not
+enough.
 An extracted name is evidence of presence, not proof that code invoked it or
 that the sample is malicious.
 
@@ -195,6 +202,9 @@ aidebug --binary /path/to/sample.exe --strings --no-tui \
 Every retained string is assigned a stable evidence ID. After explicit
 confirmation, the AI path plans every retained record across deterministic,
 bounded chunks; provider or validation failures stop safely and remain visible.
+Schema-only failures receive one bounded repair attempt, while authentication,
+permission, model, rate-limit, and connection failures stop immediately. The AI
+tab includes a bounded, credential-redacted provider or validator reason.
 Responses must account for every supplied ID and
 pass strict local schema, enum, reference, and IOC-grounding validation before
 they are accepted. A final reducer sees validated findings rather than the

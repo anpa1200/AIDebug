@@ -626,21 +626,16 @@ class AIAnalyzer:
             )
             prompt = STRING_CHUNK_INSTRUCTION.format(artifact_json=artifact_json)
             try:
-                with self._lock:
-                    raw = self._create_message(
-                        STRING_ANALYSIS_SYSTEM,
-                        [{'role': 'user', 'content': prompt}],
-                        config.AI_STRING_MAX_TOKENS,
-                    )
-                parsed = self._parse_string_chunk(
-                    raw, chunk, index=index, count=len(selected_chunks)
+                parsed = self._request_string_chunk(
+                    prompt, chunk, index=index, count=len(selected_chunks)
                 )
             except Exception as exc:
                 failed_chunks.append(index)
                 consecutive_failures += 1
                 chunk_limitations.append(
                     f'Chunk {index + 1}/{len(selected_chunks)} failed validation or remote '
-                    f'analysis ({type(exc).__name__}); its strings remain unreviewed by AI.'
+                    f'analysis: {self._safe_string_failure_detail(exc)}; its strings remain '
+                    'unreviewed by AI.'
                 )
                 self._notify_string_progress(progress_callback, {
                     'phase': 'chunks',
@@ -653,7 +648,7 @@ class AIAnalyzer:
                 if self._is_systemic_string_failure(exc):
                     breaker_reason = (
                         f'String AI review stopped after a non-retryable provider failure in '
-                        f'chunk {index + 1} ({type(exc).__name__}).'
+                        f'chunk {index + 1}: {self._safe_string_failure_detail(exc)}.'
                     )
                     break
                 if consecutive_failures >= failure_threshold:
@@ -1322,6 +1317,54 @@ class AIAnalyzer:
             'http 429',
             'connection failed',
         ))
+
+    def _request_string_chunk(self, prompt, chunk, *, index: int, count: int):
+        """Request and validate a chunk, repairing schema-only failures once.
+
+        Provider/authentication failures are never retried here. A repair request
+        resends the same bounded evidence with an explicit validator error, which is
+        preferable to silently abandoning an otherwise healthy long analysis.
+        """
+        retries = max(
+            0,
+            self._bounded_count(
+                getattr(config, 'AI_STRING_MAX_SCHEMA_RETRIES', 1), default=1
+            ),
+        )
+        current_prompt = prompt
+        for attempt in range(retries + 1):
+            with self._lock:
+                raw = self._create_message(
+                    STRING_ANALYSIS_SYSTEM,
+                    [{'role': 'user', 'content': current_prompt}],
+                    config.AI_STRING_MAX_TOKENS,
+                )
+            try:
+                return self._parse_string_chunk(raw, chunk, index=index, count=count)
+            except AIAnalyzerError as exc:
+                if attempt >= retries or self._is_systemic_string_failure(exc):
+                    raise
+                detail = self._safe_string_failure_detail(exc)
+                current_prompt = (
+                    prompt
+                    + '\n\nVALIDATION REPAIR: The preceding attempt was rejected: '
+                    + detail
+                    + ' Return a fresh JSON object matching the requested exact schema. '
+                    'Do not omit, duplicate, rename, or invent string IDs.'
+                )
+        raise AIAnalyzerError('String chunk validation failed')
+
+    @staticmethod
+    def _safe_string_failure_detail(exc: Exception) -> str:
+        """Return bounded actionable diagnostics without model output or secrets."""
+        detail = ' '.join(str(exc).split()) or type(exc).__name__
+        detail = re.sub(
+            r'(?i)(?:sk-ant-|sk-|AIza)[A-Za-z0-9_\-]{12,}',
+            '[redacted credential]',
+            detail,
+        )
+        detail = ''.join(character for character in detail if character.isprintable())
+        return detail[:320]
 
     def _chunk_string_records(self, records: list[dict]) -> list[list[dict]]:
         chunks = []

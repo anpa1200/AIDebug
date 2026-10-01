@@ -8,6 +8,12 @@ from analysis import AIAnalyzer, StringAIReport
 from analysis.string_analyzer import StringAnalyzer
 
 
+@pytest.fixture(autouse=True)
+def _disable_schema_repair_unless_requested(monkeypatch):
+    """Keep legacy failure tests single-call; repair tests opt in explicitly."""
+    monkeypatch.setattr(config, 'AI_STRING_MAX_SCHEMA_RETRIES', 0)
+
+
 class FakeMessages:
     def __init__(self, responses):
         self.responses = iter(responses)
@@ -222,6 +228,36 @@ def test_missing_annotation_marks_chunk_failed_and_never_implies_low_concern():
     assert any('failed validation' in item for item in report.limitations)
     assert len(client.messages.calls) == 1
     assert any('Aggregate synthesis was skipped' in item for item in report.limitations)
+
+
+def test_schema_validation_failure_is_repaired_once(monkeypatch):
+    monkeypatch.setattr(config, 'AI_STRING_MAX_SCHEMA_RETRIES', 1)
+    record = Record('s1', 'ordinary evidence')
+    client = FakeClient([
+        '{}',
+        chunk_response(['s1']),
+        report_response(),
+    ])
+
+    report = AIAnalyzer(client=client).analyze_strings(
+        SmartAnalysis([record]), binary_info()
+    )
+
+    assert report.coverage['reviewed_count'] == 1
+    assert report.coverage['complete'] is True
+    assert len(client.messages.calls) == 3
+    assert 'VALIDATION REPAIR' in client.messages.calls[1]['messages'][0]['content']
+
+
+def test_failed_chunk_surfaces_safe_actionable_validator_reason(monkeypatch):
+    monkeypatch.setattr(config, 'AI_STRING_MAX_SCHEMA_RETRIES', 0)
+    record = Record('s1', 'ordinary evidence')
+
+    report = AIAnalyzer(client=FakeClient(['{}'])).analyze_strings(
+        SmartAnalysis([record]), binary_info()
+    )
+
+    assert any('invalid schema' in item for item in report.limitations)
 
 
 def test_chunk_ceiling_is_explicit_partial_coverage(monkeypatch):
