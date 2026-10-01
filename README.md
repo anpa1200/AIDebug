@@ -1,5 +1,14 @@
 # AIDebug
 
+## Reviewer starting point
+
+**Evidence-focused reverse-engineering CLI.** Andrey Pautov develops the Python analyst interface, offline triage, string intelligence, PE inspection and reporting workflows. Capstone, Ghidra, GDB and optional AI providers are integrations, not original tools authored by this project.
+
+**Role relevance:** Malware triage, reverse engineering tooling, safe AI-assisted analysis, Python delivery.
+
+[Run the safe local demo and review validation scope](PORTFOLIO.md) · [Recorded local validation](validation.md)
+
+
 [![Source v3.1.0](https://img.shields.io/badge/source-v3.1.0-blueviolet)](docs/release-notes/v3.1.0.md)
 [![PyPI v3.0.0](https://img.shields.io/badge/PyPI-v3.0.0-blue)](https://pypi.org/project/1200km-aidebug/3.0.0/)
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/1200km-aidebug/3.0.0/)
