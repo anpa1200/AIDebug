@@ -14,6 +14,12 @@ meet maturity, adoption, documentation, maintenance, and quality expectations.
 
 ## What Still Needs Time
 
+As of 8 October 2026, v1.1.0, v2.0.0 and v3.0.0 are published releases, and
+[REMnux inclusion](remnux.md) is a verified external integration. These support
+maintenance/distribution evidence; they do not establish user counts or
+independent detection-quality review. This plan does not record a new
+curated-list resubmission.
+
 Some criteria cannot be solved by a same-day documentation commit:
 
 - release age

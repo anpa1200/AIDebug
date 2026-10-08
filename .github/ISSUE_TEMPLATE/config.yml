@@ -4,5 +4,5 @@ contact_links:
     url: mailto:1200km@gmail.com
     about: Please report vulnerabilities privately instead of opening a public issue.
   - name: Companion article
-    url: https://medium.com/bugbountywriteup/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
-    about: Read the full walkthrough and architecture notes.
+    url: https://1200km.com/articles/read/2026/2026-08-13-aidebug-3-1-full-release-review/
+    about: Read the 3.1 workflow; consult README for package/source version boundaries.

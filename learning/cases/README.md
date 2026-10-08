@@ -48,5 +48,8 @@ lexicographic order and supplies generic metadata. A `collection.json` can list
 ID strings or metadata objects containing `id`, optional `source`, `title`,
 `category`, `explanation`, `effects`, `analyst_clue`, and `pitfall` fields.
 
-External source is compiled but never executed. Because the compiler still
-parses it, only load source collections you have reviewed and trust.
+External source is compiled but never executed. Learning compilation runs the
+local compiler without the Bubblewrap isolation used by `--source`, inheriting
+the host environment. Path and size checks do not prevent host-file reads by
+the preprocessor or inline assembler. Only load cases and `case_common.h`
+you have reviewed and trust, inside an isolated lab.

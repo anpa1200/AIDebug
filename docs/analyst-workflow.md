@@ -3,6 +3,12 @@
 This workflow describes how to use AIDebug as a triage accelerator in a malware
 analysis lab. It does not replace manual reverse engineering.
 
+This follows source 3.1 and the
+[full release review](https://1200km.com/articles/read/2026/2026-08-13-aidebug-3-1-full-release-review/).
+Start with [version-aware installation](../README.md#installation).
+PyPI and [REMnux](remnux.md) currently supply 3.0.0; String Intelligence
+commands below require 3.1 source.
+
 ## 1. Prepare The Lab
 
 - Use an isolated malware-analysis VM or sandbox.
@@ -10,6 +16,17 @@ analysis lab. It does not replace manual reverse engineering.
 - Keep live samples out of GitHub issues, pull requests, and documentation.
 - Store case files in a controlled evidence directory.
 - Select a per-case database with `--db`; do not mix unrelated investigations.
+
+### Identify the intake artifact
+
+```bash
+aidebug --identify /lab/case-001/unknown.bin --offline
+```
+
+Review type, method, confidence, hash, size and evidence before choosing the
+PE/ELF workflow. Offline Unknown returns exit status 2, and does not prove
+encryption or maliciousness. Capture signatures and ZIP classification have
+the [documented coverage limits](safety-model.md#operational-bounds).
 
 ## 2. Run Static Triage
 
@@ -30,6 +47,49 @@ Review:
 - deterministic findings and any optional remote ATT&CK candidates
 - strings referenced by high-risk functions
 - generated HTML and JSON outputs
+
+### Correlate PE, functions and control flow
+
+Open the TUI with `aidebug --binary sample.exe --offline`. On PE input, press
+`X` or `P` to inspect headers, sections, imports, directories, TLS, unwind,
+load configuration, signatures, debug provenance, overlays and CLR metadata.
+Keep file offset, RVA and VA distinct when linking strings or imports to code.
+The function CFG tab shows recovered basic blocks; the PE workspace's CFG
+evidence means Control Flow Guard, a different structure.
+
+### Preserve String Intelligence (3.1 source)
+
+```bash
+mkdir -p case/reports
+aidebug --binary sample.exe --offline --strings --no-tui \
+  --strings-output case/reports/sample-strings.json
+aidebug --binary sample.exe --offline --strings --no-tui \
+  --string-encoding ascii --min-string-length 6 --string-category url
+```
+
+Press `S` in the TUI for the interactive workspace. Review stable IDs, offsets,
+encodings, duplicate locations, section context, categories, reasons and
+extraction/retention coverage. Category filtering affects CLI display; canonical
+JSON keeps every retained record for the selected encoding and minimum length.
+Presence does not prove an API call or network contact.
+
+After reviewing the [privacy boundary](safety-model.md#remote-ai-data-boundary),
+request optional AI annotations separately:
+
+```bash
+aidebug --binary sample.exe --strings --no-tui \
+  --analyze-strings --accept-ai-cost \
+  --strings-output case/reports/sample-strings-ai.json
+```
+
+#### String AI completion
+
+Exit status 0 means the string report was produced, including partial or failed
+AI reviews. Inspect `ai_analysis.coverage.complete`, `failed_chunks`,
+`unattempted_chunks`, `reviewed_count`, and `retained_count`, plus
+`ai_analysis.overall_assessment` and `ai_analysis.limitations`. Missing/null
+`ai_analysis` means no included AI review. Incomplete coverage forces Unknown;
+complete coverage still does not prove the model's findings are correct.
 
 ### C source triage
 
@@ -174,10 +234,28 @@ The collection directory requires `case_common.h` and matching `*.c` files;
 `collection.json` is optional but recommended for stable ordering and metadata.
 The repository's `learning/cases/collection.json` is the 100-case reference.
 External source is path-contained and size-validated, but it is still parsed by
-the local compiler and should be reviewed before use.
+the local compiler without the Bubblewrap isolation used by `--source`.
+Compiler-time host-file access remains possible and the host environment is
+inherited. Review and trust both the cases and `case_common.h`; use an isolated
+lab for external collections.
 
 ## 6. Export And Handoff
 
 Use the versioned AIDebug JSON through a reviewed custom adapter and the HTML
 report for analyst notes. JSON is not STIX or a vendor-native SIEM/OpenCTI
 schema. YARA output is seed material and must be compiled and tested.
+
+Offline YARA follows a deterministic fallback without compiler/probe checks.
+AI candidates receive local compilation and minimal generic-probe screening;
+neither path establishes corpus false-positive performance.
+
+Find previous function-analysis sessions by file or hash, with the same database:
+
+```bash
+aidebug --history sample.exe --db case/session.db
+aidebug --list-sessions --db case/session.db
+```
+
+Keep standalone strings JSON alongside reports: deterministic string CLI does
+not create a session database. Apply access, retention and redaction rules to
+all exports and the persistent SQLite database.

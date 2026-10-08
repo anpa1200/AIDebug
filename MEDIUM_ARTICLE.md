@@ -2,9 +2,13 @@
 
 ## How I combined optional Claude analysis, Frida, Capstone, and deterministic heuristics into a review-first triage workflow
 
-> Repository edition, corrected 2026-07-18: this text distinguishes current
-> implementation behavior from illustrative sample output. The previously
-> published Medium edition may not contain these corrections.
+> **Archived introduction, corrected 18 July 2026.** This preserves the
+> early workflow and illustrative output, rather than current setup guidance.
+> For source 3.1 and published 3.0, use the [current README](README.md) and
+> [maintained 3.1 review](https://1200km.com/articles/read/2026/2026-08-13-aidebug-3-1-full-release-review/).
+> The three-tab interface and v1.1.0 references below are historical.
+> Local wording corrections made 8 October qualify evidence; they do not
+> change the historical screenshots or the published website editions.
 
 ---
 
@@ -177,11 +181,11 @@ Result: the function list can prioritize likely wrapper noise. Only a verified i
 `PatternDetector` scans each discovered function's bounded instruction list for 8 behavioral patterns before optional AI analysis runs. Detected patterns are:
 
 - **`xor_decryption_loop`** (HIGH): backward jump plus a non-zeroing XOR in the loop — a broad obfuscation/decryption heuristic that needs operand review
-- **`stack_string`** (MEDIUM): 4+ consecutive `mov byte ptr [esp+N]` — anti-string-scan technique
-- **`api_hash_resolution`** (HIGH): ROR/ROL + XOR loop — shellcode loader technique for resolving API names by hash
-- **`rdtsc_timing_check`** (MEDIUM/HIGH): RDTSC instruction — sandbox/VM timing evasion
+- **`stack_string`** (MEDIUM): consecutive byte writes on the stack — a candidate runtime-built string; benign code can do this too
+- **`api_hash_resolution`** (HIGH): rotate/XOR loop — an API-hash-resolution lead; checksums and ordinary transformations can look similar
+- **`rdtsc_timing_check`** (MEDIUM/HIGH): RDTSC instruction — a timing lead that can also occur in benign profiling
 - **`direct_syscall`** (contextual): Windows candidates are HIGH, Linux syscalls are INFO, and unknown-OS cases are MEDIUM
-- **`nop_sled`** (INFO): 5+ consecutive NOPs — shellcode alignment
+- **`nop_sled`** (INFO): consecutive NOPs — padding/alignment lead, also common in benign compiler output
 - **`null_preserving_xor`** (HIGH): test/jz/xor sequence — common in XOR-encoded shellcode to avoid null bytes
 - **`base64_alphabet_reference`** (MEDIUM): reference to a known Base64 alphabet string
 
@@ -356,10 +360,14 @@ validated ground truth.
 [!] Possible packing: [dhqj] (entropy > 7.0)
 ```
 
-Immediate red flags:
-- **Section `dhqj`** — non-standard section name, custom packer
-- **Entropy > 7.0** — packed or encrypted content
-- **Imports**: `Secur32.dll` (SSP manipulation), `ADVAPI32.dll` with `CryptDecrypt`/`CryptImportKey`, `ntdll.dll` NT-native calls
+Observations to corroborate:
+
+- **Section `dhqj`** — a non-standard name; it does not identify a packer.
+- **Entropy > 7.0** — a measured byte distribution. Compression, encryption,
+  packing and benign resource content are alternatives to investigate.
+- **Imports**: `Secur32.dll`, `ADVAPI32.dll` with `CryptDecrypt`/`CryptImportKey`,
+  and `ntdll.dll` declare capabilities; they do not prove security-package
+  manipulation or execution of any imported function.
 
 ### Step 2: Function discovery + enrichment
 
@@ -406,9 +414,9 @@ still needs confirmation in a disassembler, sandbox, or debugger.
 
 ## Installation
 
-The public v1.1.0 package is on PyPI, but the corrected offline/dependency and
-safety workflow in this repository is newer than that release. Until a new
-version is tagged, install the current code from a source checkout:
+**Historical July setup below; use the [current installation guide](README.md#installation).**
+At the time of this edition, v1.1.0 was the public PyPI release and source had
+newer changes. These unpinned commands are preserved as historical context.
 
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
@@ -419,7 +427,7 @@ aidebug --help
 
 PyPI package: **https://pypi.org/project/1200km-aidebug/**
 
-Current public release: **https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0**
+Public release at the time of this edition: **https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0**
 
 Deterministic offline analysis needs only the base package:
 
@@ -441,7 +449,7 @@ If you prefer running from source:
 git clone https://github.com/anpa1200/AIDebug
 cd AIDebug
 pip install -e ".[all]"
-export ANTHROPIC_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=replace_with_your_key
 ```
 
 ### Run in TUI mode
@@ -478,7 +486,9 @@ acknowledgement and a reminder that sample-derived evidence is sent off host.
 
 ## The TUI: Three Analysis Tabs
 
-The right panel has three tabs that combine available evidence for a discovered function without claiming complete coverage.
+The historical right panel had three analysis tabs. Current source has
+AI Analysis, CFG, Patterns, Decompiled C and History; see the current README
+for the PE, hex and String Intelligence workspaces.
 
 **AI Analysis tab** — the selected analyzer's structured output. With the `ai`
 extra and remote mode, this can include Claude-generated names, summaries,
@@ -515,7 +525,7 @@ CFG: 6 basic blocks
 ```
 
 Dynamic network events are logged by the CLI and can be persisted into the
-session/JSON export. The current TUI does not expose a Network tab.
+session/JSON export. The TUI described in this edition does not expose a Network tab.
 
 ---
 
@@ -707,18 +717,18 @@ verified with full reverse-engineering and sandbox tools.
 
 The full source is at **https://github.com/anpa1200/AIDebug**.
 
-Install the corrected current source checkout as shown above:
+The July edition used a source checkout as shown above; current setup is in
+the [README](README.md#installation):
 
 ```bash
 pip install -e .
 # or: pip install -e ".[ai]" for authorized remote analysis
 ```
 
-The PyPI command `pip install 1200km-aidebug` currently installs historical
-v1.1.0, not the post-v1.1.0 source behavior described in this repository
-edition.
+At the time of this edition, `pip install 1200km-aidebug` installed v1.1.0.
+As verified 8 October 2026, PyPI provides 3.0.0 and source is 3.1.0.
 
-Release page: **https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0**
+Historical release page: **https://github.com/anpa1200/AIDebug/releases/tag/v1.1.0**
 
 If you're working in threat intelligence, incident response, or malware research — try it on your next sample and let me know what you find.
 

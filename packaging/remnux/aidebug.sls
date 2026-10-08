@@ -5,6 +5,9 @@
 # Author: Andrey Pautov: https://1200km.com
 # License: MIT: https://github.com/anpa1200/AIDebug/blob/main/LICENSE
 # Notes: aidebug
+# Historical proposal, not the accepted REMnux provisioning state.
+# Upstream accepted an unpinned [ai] package with upgrades enabled in v2026.41.4.
+# See docs/remnux.md and packaging/remnux-submission.md for current evidence.
 
 include:
   - remnux.packages.python3-virtualenv
