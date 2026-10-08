@@ -5,6 +5,11 @@ testing, and demonstrations.
 
 ## Contents
 
+- [`portfolio_demo.py`](portfolio_demo.py) - generates a benign empty ZIP with
+  a misleading filename and checks the real offline identification CLI.
+- [Generated String Intelligence evidence](generated-output/README.md) - a
+  version-stamped, unchanged export from benign `/bin/true`, with options,
+  input/output hashes and coverage.
 - `toy_xor_config.py` - benign toy source that demonstrates the kind of XOR loop
   AIDebug is designed to flag in real malware. It does not exploit, persist,
   evade, or connect to anything.
@@ -36,3 +41,20 @@ aidebug --source examples/toy_c_analysis.c --offline --no-tui --max-functions 2
 
 To run AIDebug on a real sample, use an isolated malware-analysis VM or lab.
 Do not execute unknown binaries on your host OS.
+
+## Offline String Intelligence example (3.1 source)
+
+Inspect a benign system ELF and generate a private local JSON inventory:
+
+```bash
+aidebug --version
+git rev-parse HEAD
+mkdir -p /tmp/aidebug-example
+aidebug --binary /bin/true --offline --strings --no-tui \
+  --strings-output /tmp/aidebug-example/true-strings.json
+```
+
+Record the command, version, commit and the JSON's input SHA-256 alongside
+the result: `/bin/true` differs across systems. This invokes extraction, not
+the selected binary, and makes no provider call. The generated file contains
+real local observations; the committed mock outputs above remain hand-authored.

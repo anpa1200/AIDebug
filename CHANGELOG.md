@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+- Refreshed installation, safety, analyst workflow, manual, validation, and
+  distribution documentation against the 3.1 article and October 2026 audit.
+- Documented REMnux inclusion in salt-states v2026.41.4 and its PyPI [ai] track.
+
 ## 3.1.0 - 2026-08-11
+
+Source milestone, pending immutable tag and package publication. This is the
+source milestone date, also used by `CITATION.cff`; the latest published
+release remains 3.0.0 as verified on 8 October 2026.
 
 - Added whole-file ASCII, UTF-8, UTF-16LE, and UTF-16BE string extraction with
   stable offsets, mapped addresses, bounded occurrence metadata, exact coverage,

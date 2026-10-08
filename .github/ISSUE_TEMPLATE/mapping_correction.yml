@@ -11,7 +11,8 @@ body:
     id: version
     attributes:
       label: AIDebug version
-      placeholder: "1.1.0"
+      description: Output of `aidebug --version` and Git commit for source installs.
+      placeholder: "3.1.0 source + commit, or 3.0.0 PyPI/REMnux"
     validations:
       required: true
   - type: input

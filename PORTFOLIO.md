@@ -28,6 +28,10 @@ These commands use committed or generated benign/synthetic input. They do not ex
 
 [Example provenance](examples/README.md) · [Security boundaries](SECURITY.md)
 
+[REMnux integration](docs/remnux.md) records acceptance on 7 October 2026 and
+first inclusion in salt-states v2026.41.4. It is distribution evidence, with
+explicit package/source and optional-backend boundaries.
+
 
 
 ## Validation and limitations

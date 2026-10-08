@@ -82,9 +82,11 @@ smoke-tested the published wheel; a separate fresh-environment install also
 reported `AIDebug 3.0.0` with no broken requirements. The Debian/Kali proposal
 supports only the tested offline base until optional AI/Frida dependency
 decisions are made, and it has not been accepted or validated on current Kali
-builders. The checked Ubuntu Noble repository is below several declared
+builders. [REMnux accepted AIDebug](remnux.md) on 7 October 2026 and included
+its unpinned PyPI `[ai]` state in v2026.41.4; acceptance does not certify
+every optional backend or publish source 3.1. The checked Ubuntu Noble repository is below several declared
 dependency floors and is not Kali validation. The generic top-level Python
 package layout also remains compatibility debt for a future namespace
-migration. The public Medium article and open Kali request still contain older,
-broader capability/dependency claims; update those external pages before using
-them to promote the next release.
+migration. The historical introduction and Kali request contain older claims;
+use the maintained 3.1 review and current version-aware setup for promotion.
+See [validation scope and remaining integration work](validation-plan.md).

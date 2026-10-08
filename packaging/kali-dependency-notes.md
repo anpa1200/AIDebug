@@ -1,56 +1,60 @@
 # Kali/Debian Dependency Notes
 
-The included `debian/` metadata expresses the upstream minimum versions. The
-local apt snapshot checked on 2026-07-18 is Ubuntu Noble, not Kali, so it can
-confirm package names but cannot validate a Kali build.
+Dependency matrix verified 8 October 2026 against `pyproject.toml` and the
+mirrored requirements files. Published 3.0.0 declares the same runtime/optional
+floors as current source 3.1.0. The included `debian/` files remain a packaging
+proposal; current Kali dependency resolution and build validation are pending.
 
-## Local package-name and version check
+## Current upstream floors
 
-- `python3-capstone` 4.0.2: **below** the required 5.x floor
-- `python3-pefile` 2023.2.7: meets the declared floor
-- `python3-pyelftools` 0.30: **below** the required 0.31 floor
-- `python3-packaging` 24.0: meets the build/test floor
-- `python3-rich` 13.7.1: meets the declared floor
-- `python3-textual` 0.1.13: **below** the required 0.52 floor
-- `pybuild-plugin-pyproject`
-- `dh-python`
-- `debhelper-compat`
-- `bubblewrap` and `gcc` are suggested system packages for the optional `.c`
-  to temporary-ELF source-analysis path; the generated artifact is never run.
-- `ghidra` is suggested for optional `--decompile` support. AIDebug invokes
-  `support/analyzeHeadless`, creates a temporary project, and does not provide a
-  heuristic fallback when the native-code decompiler is unavailable.
+| Capability | Python requirement |
+|---|---|
+| Base | Python >=3.10; asn1crypto >=1.5.1; capstone >=5; cryptography >=43; pefile >=2023.2.7; pyelftools >=0.31; python-dotenv >=1.0.1; rich >=15.0.0; textual >=8.2.8 |
+| Optional AI (`[ai]`) | anthropic >=0.120.2; openai >=2.0.0; yara-python >=4.5.4 |
+| Optional dynamic (`[dynamic]`) | frida >=17.17.0,<18 |
+| Build backend | setuptools >=83.0.0; wheel |
 
-The Debian control file uses versioned relationships so an incompatible target
-fails dependency resolution rather than producing a package with unsupported
-libraries. A current Kali builder/repository check is still required.
+The OpenAI client serves OpenAI, Gemini's compatible endpoint and Ollama paths.
+Provider clients do not establish live model availability. AI-generated YARA
+candidates require the local compiler binding and bounded probe checks;
+offline deterministic seeds do not use that validation path.
 
-## Dependency gaps to discuss with Kali maintainers
+Bubblewrap and an ELF-capable C compiler are needed for `--source`; Ghidra and
+compatible Java for reconstruction; GDB for local ELF debug. Learning requires
+an x86-64 ELF compiler and Ghidra, but its compiler does not use the `--source`
+Bubblewrap boundary. Frida targets need matching components and permissions.
 
-These optional upstream Python packages did not have matching Debian/Kali
-packages in the review environment:
+## Historical Ubuntu Noble snapshot: 18 July 2026
 
-- `anthropic` (required only for the opt-in remote-AI path; `--offline` does
-  not import or call it)
-- `frida` (optional dynamic instrumentation)
+This is preserved package-name/version evidence, not a current Kali check.
+Compared with the current floors:
 
-Practical options:
+| Observed package | Historical version | Current floor comparison |
+|---|---:|---|
+| python3-capstone | 4.0.2 | Below 5 |
+| python3-pefile | 2023.2.7 | Meets declared floor |
+| python3-pyelftools | 0.30 | Below 0.31 |
+| python3-packaging | 24.0 | Meets build/test helper floor |
+| python3-rich | 13.7.1 | Below 15.0.0 |
+| python3-textual | 0.1.13 | Below 8.2.8 |
 
-1. Keep the initial Debian package offline-only and exercise `--offline` in
-   autopkgtest, as the current proposal does; or package `python3-anthropic`
-   before enabling the remote-AI path.
-2. Package `python3-frida` separately only if Kali maintainers want the optional
-   dynamic extra in the distribution.
-3. The current source package keeps Anthropic in the optional `ai` extra. A
-   Debian package can remain an offline-only build when its description makes
-   that feature boundary explicit.
+The earlier snapshot also located `pybuild-plugin-pyproject`, `dh-python` and
+`debhelper-compat`. It did not establish compatible versions for every current
+runtime or optional requirement. Anthropic and Frida lacked matching packages
+in that review environment; that is not a current package-availability claim.
 
-Upstream's `ai` extra also includes `yara-python >= 4.5` so every model-produced
-rule is compiled and screened locally before it can be written. A target
-package must map and version-check that compiler binding, or leave AI-backed
-YARA generation disabled; deterministic offline candidate generation does not
-import the binding.
+## Packaging work still required
 
-The Debian metadata is still a packaging proposal, not an accepted Kali
-package. Its autopkgtest validates the supported offline path; remote AI and
-dynamic Frida features require separate dependency decisions by maintainers.
+`debian/control` is not yet a complete mirror: it retains Rich >=13, lacks
+explicit asn1crypto/cryptography/python-dotenv build/runtime dependencies, and
+does not express the setuptools >=83 build floor. Generated `${python3:Depends}`
+alone does not establish a usable build environment or target-package mapping.
+Resolve names/versions in an actual Kali builder, align the control file and
+run the build plus autopkgtest before claiming package readiness.
+
+The proposed binary package keeps AI/Frida optional and exercises offline
+behavior. Maintainers need separate dependency decisions for Anthropic,
+OpenAI-compatible clients, yara-python and Frida. Upstream's optional extras
+permit an offline base package; they do not make incomplete base dependencies
+acceptable. No Debian control/runtime redesign is part of this documentation
+update. See the [Kali request update draft](../docs/kali-new-tool-request.md).

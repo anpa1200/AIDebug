@@ -12,7 +12,8 @@ material, not final automated truth.
 - Repository: https://github.com/anpa1200/AIDebug
 - PyPI: https://pypi.org/project/1200km-aidebug/
 - Release: https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0
-- Article: https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
+- Maintained 3.1 article: https://1200km.com/articles/read/2026/2026-08-13-aidebug-3-1-full-release-review/
+- Historical introduction: https://medium.com/@1200km/ai-powered-malware-debugger-that-explains-every-function-it-sees-2a28ef75df8a
 - Portfolio hub: https://1200km.com/
 
 ## One-Line Pitch
@@ -34,7 +35,10 @@ malware-analysis labs and requires analyst review before operational use.
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
-pip install -e .
+git checkout v3.0.0
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 aidebug --help
 aidebug --binary /path/to/sample --offline --no-tui
 ```
@@ -196,21 +200,21 @@ Track progress as:
 
 ## External Submission Status
 
-Status checked 2026-07-18. A merged list entry is discovery evidence, not a
-security review or technical endorsement.
+Entries below distinguish 8 October 2026 checks from retained historical
+checks. Acceptance is discovery/distribution evidence, not a security review.
 
 | Destination | Status | Reference |
 |---|---|---|
-| awesome-yara | Merged/accepted | [PR #78](https://github.com/InQuest/awesome-yara/pull/78) |
-| awesome-reversing | Open | [PR #32](https://github.com/tylerha97/awesome-reversing/pull/32) |
-| awesome-threat-intelligence | Open | [PR #384](https://github.com/hslatman/awesome-threat-intelligence/pull/384) |
-| awesome-python-security | Open | [PR #26](https://github.com/guardrailsio/awesome-python-security/pull/26) |
-| Malware-Analysis | Open | [PR #2](https://github.com/kh4sh3i/Malware-Analysis/pull/2) |
-| BlackArch | Open proposal | [Issue #4965](https://github.com/BlackArch/blackarch/issues/4965) |
-| REMnux | Closed/deferred on 2026-06-22 pending maintenance and maturity evidence | [Issue #345](https://github.com/REMnux/salt-states/issues/345) |
-| awesome-malware-analysis | Closed without merge | [PR #6](https://github.com/brandonhimpfen/awesome-malware-analysis/pull/6) |
-| Kali New Tool Request | `new`/open; public request still contains v1.0.0 metadata | [Issue 0009743](https://bugs.kali.org/view.php?id=9743) |
-| Kali tracking work item | Closed on 2026-06-16; decision text was not independently captured | [Work item #26](https://gitlab.com/kalilinux/packages/kali-meta/-/work_items/26) |
+| awesome-yara | Merged/accepted in the 18 July record; not reverified here | [PR #78](https://github.com/InQuest/awesome-yara/pull/78) |
+| awesome-reversing | Closed without merge on 5 August; checked 8 October | [PR #32](https://github.com/tylerha97/awesome-reversing/pull/32) |
+| awesome-threat-intelligence | Closed without merge on 5 August; checked 8 October | [PR #384](https://github.com/hslatman/awesome-threat-intelligence/pull/384) |
+| awesome-python-security | Closed without merge on 5 August; checked 8 October | [PR #26](https://github.com/guardrailsio/awesome-python-security/pull/26) |
+| Malware-Analysis | Closed without merge on 5 August; checked 8 October | [PR #2](https://github.com/kh4sh3i/Malware-Analysis/pull/2) |
+| BlackArch | Open proposal in the 8 October audit | [Issue #4965](https://github.com/BlackArch/blackarch/issues/4965) |
+| REMnux | Accepted 7 October; first state release v2026.41.4; checked 8 October | [PR #355](https://github.com/REMnux/salt-states/pull/355), [integration details](docs/remnux.md) |
+| awesome-malware-analysis | Historical 18 July check: closed without merge | [PR #6](https://github.com/brandonhimpfen/awesome-malware-analysis/pull/6) |
+| Kali New Tool Request | `new`/open with v1.0.0 metadata in the 8 October audit | [Issue 0009743](https://bugs.kali.org/view.php?id=9743) |
+| Kali tracking work item | Historical: closed 16 June; decision text not independently captured | [Work item #26](https://gitlab.com/kalilinux/packages/kali-meta/-/work_items/26) |
 
 Do not label closed/deferred proposals as pending acceptance. Recheck every
 status at publication time rather than copying this table indefinitely.

@@ -1,4 +1,4 @@
-.TH AIDEBUG 1 "August 2026" "aidebug 3.1.0" "User Commands"
+.TH AIDEBUG 1 "October 2026" "aidebug 3.1.0" "User Commands"
 .SH NAME
 aidebug \- AI-assisted malware reverse-engineering debugger
 .SH SYNOPSIS
@@ -13,6 +13,15 @@ MITRE ATT&CK mappings that require analyst validation.
 This manual tracks the AIDebug 3.1.0 source tree. Published artifacts remain
 immutable and should be verified against their matching release tag.
 .SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show supported options and exit.
+.TP
+.BR \-\-identify " " PATH
+Identify an arbitrary regular file by signature, container structure, and text
+rules. If unknown, configured AI may receive bounded header metadata.
+.B \-\-offline
+disables AI; unresolved types return Unknown with exit status 2.
 .TP
 .BR \-\-binary " " FILE
 Analyze a PE or ELF binary.
@@ -65,7 +74,10 @@ for the text catalog or report.
 Load standalone C learning cases from DIR. The directory must contain
 case_common.h and matching C files; collection.json is optional. Source paths
 are validated and the temporary ELF is never executed. Review external source
-before allowing the local compiler to parse it.
+and case_common.h before compilation. Learning uses the local compiler without
+the Bubblewrap isolation used by
+.BR \-\-source .
+Path and size checks do not prevent compiler-time host-file reads.
 .TP
 .BR \-\-learning-compiler " " PATH
 Use PATH as the ELF compiler for an exact learning lesson.
@@ -92,6 +104,8 @@ and
 .BR \-\-no-tui .
 Remote endpoints also require
 .BR \-\-accept-ai-cost .
+This option is also available as
+.BR \-\-strings-ai .
 .TP
 .BR \-\-min-string-length " " N
 Set the minimum extracted character count.
@@ -101,7 +115,8 @@ Extract all supported encodings, or only ascii, utf-8, utf-16le, or utf-16be.
 .TP
 .BR \-\-string-category " " CATEGORY
 Filter the string CLI view by a deterministic category. Repeatable. The
-canonical JSON inventory and an explicitly requested AI review remain complete.
+filter does not remove records from the canonical retained JSON inventory or
+the planned explicit AI review. Review failure/truncation is reported separately.
 .TP
 .BR \-\-strings-output " " FILE.json
 Write the complete retained string inventory and optional validated AI report
@@ -138,6 +153,8 @@ Generate an HTML report.
 .TP
 .B \-\-yara
 Generate YARA candidate rules for high-risk findings.
+Offline seeds bypass local compiler/probe checks. AI candidates receive those
+checks, but all output requires compilation verification and corpus testing.
 .TP
 .B \-\-json-export
 Export analysis data as JSON.
@@ -166,6 +183,14 @@ See the upstream safety documentation before use.
 .SH SAFETY
 Use only in an isolated malware-analysis VM or authorized lab. Do not execute
 unknown samples on a host operating system.
+.SH EXIT STATUS
+For file identification, 0 means a type was reported and 2 means unresolved
+Unknown. Other argument or runtime failures can return nonzero.
+.PP
+For string CLI reports, 0 means report production, including partial or failed
+AI review. Inspect ai_analysis.coverage.complete, failed_chunks,
+unattempted_chunks, reviewed_count, retained_count, overall_assessment, and
+limitations in JSON; a successful exit does not establish complete AI coverage.
 .SH AUTHOR
 Andrey Pautov <1200km@gmail.com>
 .SH LICENSE

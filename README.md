@@ -53,6 +53,8 @@ analyst-review reporting.
 
 ## Installation
 
+### Published 3.0.0 package
+
 Install the stable package from PyPI:
 
 ```bash
@@ -66,7 +68,7 @@ aidebug --version
 Install optional capabilities as needed:
 
 ```bash
-# Remote/local LLM providers and validated YARA generation
+# LLM provider clients and local validation of AI-generated YARA candidates
 python -m pip install "1200km-aidebug[ai]==3.0.0"
 
 # Frida dynamic instrumentation
@@ -76,7 +78,32 @@ python -m pip install "1200km-aidebug[dynamic]==3.0.0"
 python -m pip install "1200km-aidebug[all]==3.0.0"
 ```
 
-For development:
+### Reviewed 3.1.0 source
+
+String Intelligence requires source 3.1 until its package is published. The
+[3.1 review](https://1200km.com/articles/read/2026/2026-08-13-aidebug-3-1-full-release-review/)
+pins the revision below. Its runtime code also matches the audited October 1
+main revision `80b0b7172b592814504c405a16bf4cc0ce4161eb`.
+
+```bash
+git clone https://github.com/anpa1200/AIDebug.git
+cd AIDebug
+git checkout cd81ef242db0bcea3296970d45c241a4228d2d27
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+aidebug --version
+```
+
+From that checkout, add extras with `python -m pip install -e ".[ai]"`,
+`".[dynamic]"`, or `".[all]"`. Keep extras on the same installation track:
+installing `"1200km-aidebug[ai]==3.0.0"` over source 3.1 can replace it with
+the published 3.0 package.
+
+### Development
+
+For a moving development checkout:
 
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
@@ -88,6 +115,18 @@ python -m pip install -e ".[dev,dynamic]"
 
 Ghidra, GDB, Bubblewrap, a C compiler, and Frida target components are external
 tools used only by the workflows that require them.
+
+### REMnux integration
+
+AIDebug was accepted into REMnux on **7 October 2026** through
+[PR #355](https://github.com/REMnux/salt-states/pull/355), first included in
+[salt-states v2026.41.4](https://github.com/REMnux/salt-states/releases/tag/v2026.41.4).
+The [accepted state](https://github.com/REMnux/salt-states/blob/v2026.41.4/remnux/python3-packages/aidebug.sls)
+installs unpinned `1200km-aidebug[ai]` from PyPI into `/opt/aidebug`, enables
+upgrades, and exposes `/usr/local/bin/aidebug`. As verified on 8 October 2026,
+PyPI still provides 3.0.0; this does not install unpublished 3.1 source or the
+`dynamic` extra. Use `--offline` to keep analysis local.
+See [REMnux setup and version boundaries](docs/remnux.md).
 
 ## Quick Start
 
@@ -130,8 +169,13 @@ extensions, confidence, method, evidence, SHA-256, and size. Deterministic
 coverage includes common executable and bytecode formats, archives and disk
 images, Office/OpenDocument/EPUB containers, documents, images, audio/video,
 packet captures, databases, registry/event-log artifacts, scripts, and text.
-ZIP-based formats are inspected by bounded member names and small metadata
-reads; files are never executed or extracted.
+ZIP classification considers the first 4,096 names and reads at most 128 bytes
+of a `mimetype` entry. Python parses the central directory before the name
+limit applies; this does not bound initial directory-parsing memory. The whole
+input is capped at 128 MiB, and files are never executed or extracted.
+Built-in capture signatures cover nanosecond PCAP in both byte orders and
+PCAP-NG. Conventional microsecond PCAP signatures are currently missing;
+optional `libmagic` may recognize them.
 
 Install `python-magic` plus the operating system's `libmagic` database for
 additional signatures known to the local platform:
@@ -213,6 +257,13 @@ and reviewed/sent counts are always reported; incomplete coverage forces an
 customer data, and attacker-authored prompt injection, so review the remote-AI
 boundary before enabling this feature.
 
+For string CLI reports, exit status 0 means a report was produced, even when
+AI review is partial or failed. Inspect `ai_analysis.coverage.complete`,
+`failed_chunks`, `unattempted_chunks`, `reviewed_count`, and `retained_count`,
+plus `ai_analysis.overall_assessment` and `ai_analysis.limitations`. An absent
+`ai_analysis` means no AI review was included.
+See the [workflow completion checks](docs/analyst-workflow.md#string-ai-completion).
+
 Inspect prior analysis by file or SHA-256:
 
 ```bash
@@ -275,6 +326,11 @@ C source and compiler-generated instructions, asks Ghidra for an independent
 reconstruction, records build provenance, and removes the temporary artifact.
 The generated lesson binary is never executed.
 
+Learning compilation uses the local compiler without the Bubblewrap isolation
+used by `--source`. Only compile reviewed, trusted cases and `case_common.h`;
+path and size checks do not prevent compiler-time host-file access. Use an
+isolated lab for external collections.
+
 Use `--no-tui` for text output, or load a reviewed external collection:
 
 ```bash
@@ -288,13 +344,23 @@ AI analysis is optional. Deterministic offline mode remains available without
 credentials.
 
 ```bash
+# Published 3.0.0 installation:
 python -m pip install "1200km-aidebug[ai]==3.0.0"
-cp .env.example .env
-chmod 600 .env
+```
+
+For reviewed source 3.1, instead run `python -m pip install -e ".[ai]"` from
+that checkout. A fresh wheel install does not put `.env.example` in your
+working directory. Create a private provider file outside sample directories:
+
+```bash
+mkdir -p "$HOME/.config/aidebug"
+touch "$HOME/.config/aidebug/provider.env"
+chmod 600 "$HOME/.config/aidebug/provider.env"
+export AIDEBUG_ENV_FILE="$HOME/.config/aidebug/provider.env"
 ```
 
 Configure exactly one provider, or set `AIDEBUG_LLM_PROVIDER` explicitly when
-several credentials exist:
+several credentials exist. Edit the private file with these placeholder values:
 
 ```dotenv
 AIDEBUG_LLM_PROVIDER=anthropic
@@ -307,7 +373,10 @@ ANTHROPIC_API_KEY=replace_with_your_key
 ```
 
 Use `AIDEBUG_ENV_FILE=/absolute/path/to/private.env` to keep configuration away
-from untrusted analysis directories. Remote bulk analysis requires the explicit
+from untrusted analysis directories. AIDebug loads that explicit file or a
+`.env` beside `config.py`; it does not search arbitrary working directories.
+Existing environment variables take precedence. Remote bulk analysis requires
+the explicit
 `--accept-ai-cost` acknowledgement. Review the [remote-AI data boundary](docs/safety-model.md#remote-ai-data-boundary)
 before sending sample evidence to any provider.
 
@@ -331,7 +400,7 @@ available separately for supported local or remote instrumentation workflows.
 | HTML report | Human review and case notes |
 | Versioned JSON | Custom integration input; not a vendor-native or STIX schema |
 | String Intelligence JSON | Canonical retained string inventory plus optional validated AI annotations and coverage |
-| YARA candidates | Locally compiled detection-engineering seeds requiring review and testing |
+| YARA candidates | Offline seeds need compilation; AI candidates receive compiler/probe checks; all need corpus testing |
 | ATT&CK candidates | Technique-level hypotheses requiring analyst validation |
 | CFG visualization | Function-level control-flow review |
 | SQLite history | Local session evidence and SHA-256-based finding restoration |
@@ -363,7 +432,8 @@ an isolated malware-analysis VM or lab.
 
 - Static analysis does not execute the inspected PE or ELF.
 - C inputs and learning cases are compiled to temporary artifacts that are not
-  executed by their analysis workflows.
+  executed. Learning compilation is trusted-input only and does not use the
+  `--source` Bubblewrap isolation.
 - GDB active mode launches a local ELF; Frida mode instruments a running target.
 - Outputs are bounded evidence and hypotheses, not automatic attribution or
   final detection truth.
@@ -383,6 +453,7 @@ untrusted samples.
 | [Safety model](docs/safety-model.md) | Trust boundaries and safe operation |
 | [Validation plan](docs/validation-plan.md) | Testable capability claims |
 | [Sample evidence](docs/sample-evidence.md) | Illustrative screenshots and mock artifacts |
+| [REMnux integration](docs/remnux.md) | Accepted state, package track, and optional tool requirements |
 | [Comparison](docs/comparison.md) | Scope and positioning |
 | [Release readiness](docs/release-readiness.md) | Reproducible release gates |
 | [AIDebug 3.1 release notes](docs/release-notes/v3.1.0.md) | Current source release changes |

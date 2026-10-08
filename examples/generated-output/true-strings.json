@@ -1,0 +1,283 @@
+{
+  "_schema": "aidebug/strings/v1",
+  "_privacy_notice": "Extracted strings may contain credentials, tokens, customer data, paths, URLs, and other sensitive evidence. The deterministic inventory is local; ai_analysis is present only after an explicit model request.",
+  "binary": {
+    "filename": "true",
+    "sha256": "8a63c98320173f79e263115e10cefc170155e47d1fd4b5a70e4429d2699cae28",
+    "format": "ELF",
+    "architecture": "x86-64",
+    "bits": 64,
+    "os_target": "Linux",
+    "analysis_origin": "binary",
+    "compiled_artifact_sha256": null
+  },
+  "coverage": {
+    "extracted_count": 8,
+    "retained_count": 8,
+    "displayed_count": 8,
+    "display_filter_excluded_count": 0,
+    "retention_filtered_count": 0,
+    "extraction_truncated": false,
+    "omitted_count": 0,
+    "count_is_lower_bound": false,
+    "coverage_reasons": [],
+    "value_truncated_count": 0,
+    "scan_complete": true,
+    "inventory_complete": true,
+    "scanned_bytes": 26936,
+    "total_bytes": 26936
+  },
+  "filters": {
+    "categories": []
+  },
+  "category_counts": {
+    "api": 2,
+    "debug": 1,
+    "domain": 1,
+    "posix_path": 1,
+    "text": 4,
+    "url": 1
+  },
+  "strings": [
+    {
+      "id": "str-61399bf8eba23a3b",
+      "value": "Report any translation bugs to <https://translationproject.org/team/>",
+      "encoding": "ascii",
+      "offset": 18768,
+      "address": 18768,
+      "byte_length": 69,
+      "char_length": 69,
+      "categories": [
+        "url",
+        "domain"
+      ],
+      "confidence": "medium",
+      "suspicion_score": 30,
+      "reasons": [
+        "Contains a syntactically valid network URL",
+        "Contains a DNS-style domain name"
+      ],
+      "description": "Detected as url, domain. Classification is contextual and does not by itself prove malicious intent.",
+      "entities": [],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        18768
+      ],
+      "occurrence_addresses": [
+        18768
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-95b875f42f92d0ff",
+      "value": "/usr/lib/debug/.dwz/x86_64-linux-gnu/coreutils.debug",
+      "encoding": "ascii",
+      "offset": 24596,
+      "address": null,
+      "byte_length": 52,
+      "char_length": 52,
+      "categories": [
+        "posix_path",
+        "debug"
+      ],
+      "confidence": "high",
+      "suspicion_score": 17,
+      "reasons": [
+        "Contains an absolute POSIX path",
+        "Contains debugging or tracing terminology"
+      ],
+      "description": "Detected as posix path, debug. Classification is contextual and does not by itself prove malicious intent.",
+      "entities": [],
+      "section": ".bss",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        24596
+      ],
+      "occurrence_addresses": [
+        null
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-1829bd35486aeff2",
+      "value": "      --version     output version information and exit",
+      "encoding": "ascii",
+      "offset": 18472,
+      "address": 18472,
+      "byte_length": 55,
+      "char_length": 55,
+      "categories": [
+        "api"
+      ],
+      "confidence": "high",
+      "suspicion_score": 16,
+      "reasons": [
+        "Matches a known operating-system or runtime API",
+        "Imported from ELF dynamic symbols (exit)"
+      ],
+      "description": "exit: Imported API/function; behavior depends on its providing module and arguments.",
+      "entities": [
+        {
+          "kind": "api",
+          "canonical_name": "exit"
+        }
+      ],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        18472
+      ],
+      "occurrence_addresses": [
+        18472
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-2ef5a975dbcab345",
+      "value": "A NULL argv[0] was passed through an exec system call.",
+      "encoding": "ascii",
+      "offset": 18256,
+      "address": 18256,
+      "byte_length": 54,
+      "char_length": 54,
+      "categories": [
+        "api"
+      ],
+      "confidence": "medium",
+      "suspicion_score": 16,
+      "reasons": [
+        "Matches a known operating-system or runtime API"
+      ],
+      "description": "system: Passes a command to the host command processor.",
+      "entities": [
+        {
+          "kind": "api",
+          "canonical_name": "system"
+        }
+      ],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        18256
+      ],
+      "occurrence_addresses": [
+        18256
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-b7403e50835cc3b6",
+      "value": "NOTE: your shell may have its own version of %s, which usually supersedes",
+      "encoding": "ascii",
+      "offset": 18537,
+      "address": 18537,
+      "byte_length": 73,
+      "char_length": 73,
+      "categories": [
+        "text"
+      ],
+      "confidence": "low",
+      "suspicion_score": 0,
+      "reasons": [
+        "Printable string"
+      ],
+      "description": "Printable program string with no high-confidence structured indicator.",
+      "entities": [],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        18537
+      ],
+      "occurrence_addresses": [
+        18537
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-f15f76cce667aa94",
+      "value": "the version described here.  Please refer to your shell's documentation",
+      "encoding": "ascii",
+      "offset": 18611,
+      "address": 18611,
+      "byte_length": 71,
+      "char_length": 71,
+      "categories": [
+        "text"
+      ],
+      "confidence": "low",
+      "suspicion_score": 0,
+      "reasons": [
+        "Printable string"
+      ],
+      "description": "Printable program string with no high-confidence structured indicator.",
+      "entities": [],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        18611
+      ],
+      "occurrence_addresses": [
+        18611
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-17efb94bd270951e",
+      "value": "There is NO WARRANTY, to the extent permitted by law.",
+      "encoding": "ascii",
+      "offset": 17828,
+      "address": 17828,
+      "byte_length": 53,
+      "char_length": 53,
+      "categories": [
+        "text"
+      ],
+      "confidence": "low",
+      "suspicion_score": 0,
+      "reasons": [
+        "Printable string"
+      ],
+      "description": "Printable program string with no high-confidence structured indicator.",
+      "entities": [],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        17828
+      ],
+      "occurrence_addresses": [
+        17828
+      ],
+      "truncated": false
+    },
+    {
+      "id": "str-dd80033744a54a5c",
+      "value": "This is free software: you are free to change and redistribute it.",
+      "encoding": "ascii",
+      "offset": 17761,
+      "address": 17761,
+      "byte_length": 66,
+      "char_length": 66,
+      "categories": [
+        "text"
+      ],
+      "confidence": "low",
+      "suspicion_score": 0,
+      "reasons": [
+        "Printable string"
+      ],
+      "description": "Printable program string with no high-confidence structured indicator.",
+      "entities": [],
+      "section": ".rodata",
+      "occurrence_count": 1,
+      "occurrence_offsets": [
+        17761
+      ],
+      "occurrence_addresses": [
+        17761
+      ],
+      "truncated": false
+    }
+  ],
+  "ai_analysis": null
+}

@@ -24,8 +24,15 @@ Active debug mode is an execution boundary too. It starts a local ELF through
 GDB/MI and permits breakpoints, continuation, and instruction stepping. Run it
 only in a disposable, authorized, network-controlled analysis VM. AIDebug does
 not sandbox GDB or the inferior and does not make host execution of unknown code
-safe. The learning mode is separate: it uses bundled text only and executes no
-sample.
+safe.
+
+Learning Mode compiles bundled or explicitly selected external C collections
+and their common header. The generated ELF is never executed. Its compiler
+currently runs without the Bubblewrap isolation used by `--source` and
+inherits the host environment. Path containment and size validation are not
+compiler isolation: a preprocessor or inline assembler can read host files
+during compilation. Only load cases and `case_common.h` you have reviewed
+and trust, and use an isolated lab for external collections.
 
 C source analysis is static preparation, not dynamic execution. AIDebug copies
 one selected `.c` file into a temporary directory, invokes an allowlisted local
@@ -74,6 +81,14 @@ Closing or unmounting the workspace requests cooperative cancellation. An
 already in-flight request is allowed to return, but no later chunk or reducer
 request is started; any resulting coverage remains partial with an UNKNOWN
 assessment.
+
+String CLI exit status 0 confirms report production, not complete AI review.
+Inspect `ai_analysis.coverage.complete`, failed/unattempted chunks, reviewed
+and retained counts, the overall assessment, and limitations in JSON.
+No automatic secret redaction precedes string submission. Cost acknowledgement
+is not a monetary budget: defaults allow 40 records / 48,000 characters per
+chunk, up to 25,000 chunks, and a three-consecutive-failure breaker. Review
+the inventory and planned scope before remote use.
 
 Before remote analysis:
 
@@ -125,6 +140,16 @@ scanning is capped at 100,000 records, with
 at most 50,000 import and 50,000 export candidates retained. Discovery is capped
 at 300 function candidates and 250 instructions per function; bulk CLI analysis
 defaults to 25 selected functions.
+
+File identification caps total input at 128 MiB. ZIP subtype classification
+uses the first 4,096 names and up to 128 bytes of `mimetype` content, but
+`ZipFile` parses the central directory and `namelist()` materializes all names
+before the slice. The name limit does not bound initial ZIP parsing memory;
+later entries can hide subtype markers. No archive is extracted or executed.
+Built-in capture signatures currently cover nanosecond PCAP and PCAP-NG;
+conventional microsecond PCAP depends on optional `libmagic` or can remain
+Unknown offline. These are current limits, not resolved fixes.
+
 Optional Ghidra output is capped at 12,000 characters per function and each
 function has a separate decompilation timeout. Ghidra runs headlessly in a
 temporary project that AIDebug removes afterward. The result is reconstructed
@@ -146,6 +171,9 @@ YARA generation considers at most `--max-functions` HIGH/CRITICAL traces per
 ruleset. Remote candidates must compile locally and are rejected if they match
 empty or minimal generic PE/ELF probes; this is a safety screen, not a
 false-positive benchmark, so every candidate still requires corpus testing.
+Offline output takes a separate deterministic fallback and does not receive
+those compiler or generic-probe checks. It is escaped seed material that needs
+compilation and benign/related-sample corpus testing.
 
 API-call, network, and runtime-event persistence is capped at 10,000 records per
 category per session. JSON export applies the same 10,000-record category caps,

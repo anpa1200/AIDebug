@@ -3,9 +3,13 @@
 The linked `kali-meta` work item was closed on 2026-06-16. Its decision text was
 not independently captured. A separate official Kali New Tool Request,
 [issue 0009743](https://bugs.kali.org/view.php?id=9743), remains `new`/open as
-of 2026-07-18 and contains stale v1.0.0 metadata. Use
+in the 8 October 2026 audit and contains stale v1.0.0 metadata. Use
 `docs/kali-new-tool-request.md` for a future update to that existing request;
 do not open a duplicate or describe this historical file as an active request.
+
+The v1.1.0 version, release link and unpinned install snippets below are
+historical records, not current setup instructions. Current source/PyPI setup
+is in [README](../README.md#installation).
 
 ## Tool
 
