@@ -58,8 +58,11 @@ log establish which source tree that workflow checked out and built.
 An owner must verify all of the following outside the source tree:
 
 - `main` and `v*` tags are protected;
-- required CI checks and review are enforced;
-- the `pypi` environment requires appropriate approval;
+- pull requests and all ten CI job contexts are required on `main`, with zero
+  required approving PR reviews under the approved
+  [solo-maintainer policy](../RELEASE.md#solo-maintainer-review-and-release-approval);
+- owner review/release consent is recorded, and the `pypi` environment requires
+  owner `anpa1200` approval with self-approval permitted;
 - Dependabot alerts/security updates, secret scanning/push protection, and code
   scanning are enabled where available;
 - private vulnerability reporting is enabled and monitored;
@@ -73,6 +76,18 @@ An owner must verify all of the following outside the source tree:
 The source tree is prepared as the AIDebug 3.1.0 release candidate. It is not a
 published artifact until the version-matched immutable tag and GitHub release
 successfully complete the verified publishing workflow.
+
+The [9 October candidate check](release-validation-3.1.0.md) passed the local
+automated gate with 438 tests and no skips, plus benign live Ghidra/GDB/Frida
+smokes. Publication remains blocked by unmet repository controls; the local
+Ollama string review was incomplete and is not reported as a successful AI
+integration.
+
+On 9 October, owner `anpa1200` approved the solo-maintainer policy and the
+required repository controls. Approval resolves the policy decision; it is
+not evidence that the settings have been applied. GitHub passkey confirmation
+and the owner-launched external-provider test remain pending. No successful
+live OpenAI/Claude analysis is claimed, and no publication gate is waived.
 
 [v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0) is the current
 release, with its version-matched distribution published on
