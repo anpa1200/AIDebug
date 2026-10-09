@@ -7,8 +7,9 @@ aidebug (3.1.0-0kali1) kali-dev; urgency=medium
   * Add the paginated terminal workspace, private JSON export, and validated
     opt-in whole-inventory AI triage.
   * Treat non-loopback Ollama endpoints as remote evidence transfers.
+  * Refresh documentation and record accepted REMnux PyPI integration.
 
- -- Andrey Pautov <1200km@gmail.com>  Tue, 11 Aug 2026 22:52:45 +0300
+ -- Andrey Pautov <1200km@gmail.com>  Fri, 09 Oct 2026 00:00:00 +0000
 
 aidebug (3.0.0-0kali1) kali-dev; urgency=medium
 

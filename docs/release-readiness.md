@@ -74,6 +74,12 @@ The source tree is prepared as the AIDebug 3.1.0 release candidate. It is not a
 published artifact until the version-matched immutable tag and GitHub release
 successfully complete the verified publishing workflow.
 
+The [9 October candidate check](release-validation-3.1.0.md) passed the local
+automated gate with 438 tests and no skips, plus benign live Ghidra/GDB/Frida
+smokes. Publication remains blocked by unmet repository controls; the local
+Ollama string review was incomplete and is not reported as a successful AI
+integration.
+
 [v3.0.0](https://github.com/anpa1200/AIDebug/releases/tag/v3.0.0) is the current
 release, with its version-matched distribution published on
 [PyPI](https://pypi.org/project/1200km-aidebug/3.0.0/). The release workflow
