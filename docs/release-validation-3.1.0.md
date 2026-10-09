@@ -75,10 +75,12 @@ The Ollama model ran on CPU with a reported 4,096-token context. Its failure
 does not prove an SDK defect or identify whether generation, schema validation
 or the request failed; the public report deliberately retains the bounded
 `AIAnalyzerError` diagnostic. Fail-closed reporting worked, but no successful
-live end-to-end string-AI review was established. A suitable provider/model
-needs a separately authorized successful validation before claiming that
-integration works. No paid provider, Windows/macOS target or real malware was
-used.
+live end-to-end string-AI review was established. The owner subsequently
+authorized external OpenAI/Claude validation and stopped further local-model
+testing. An owner-launched installed-wheel integration test is prepared, but
+no live result is available. Its positive and negative offline harness checks
+do not establish provider success. No paid provider, Windows/macOS target or
+real malware was used.
 
 ## Required controls and unresolved release gates
 
@@ -87,7 +89,7 @@ settings outside the source tree before publication. Fresh checks found:
 
 | Control | Observed state |
 |---|---|
-| Protected `main`, required CI and review | `protected=false`; no required check/review enforcement |
+| Protected `main`, mandatory PR and required CI | `protected=false`; no required PR/check enforcement |
 | Protected `v*` tags | No repository rulesets; no release-tag protection was established |
 | Approval on the `pypi` environment | No protection rules or deployment-branch policy |
 | Private vulnerability reporting | Disabled |
@@ -95,11 +97,20 @@ settings outside the source tree before publication. Fresh checks found:
 | Secret-scanning/push-protection settings | Security settings absent from the readable repository metadata; history scanning passed, but platform controls remain unverified |
 | Maintained SAST | Bandit gate passed; no additional code-scanning claim is made |
 
-The owner must choose/authorize the repository controls and an independent
-reviewer. Enforcing one review on a PR authored by the same account requires a
-different eligible reviewer. None of these settings was silently enabled,
-disabled or waived. No tag, GitHub release, Trusted Publishing dispatch or
-PyPI upload was attempted.
+On **9 October 2026**, owner `anpa1200` explicitly approved the
+[solo-maintainer policy](../RELEASE.md#solo-maintainer-review-and-release-approval)
+and the repository controls. The policy requires PRs, all ten CI job contexts,
+recorded owner review/release consent and owner approval on the `pypi`
+environment, with **zero required approving PR reviews** and environment
+self-approval permitted. A second reviewer is not required.
+
+This resolves the policy decision, not the technical gates. The existing
+browser login still awaits the owner's passkey confirmation, CLI authentication
+is invalid, and the available authenticated connector publishes repository
+content but exposes no administrative settings mutation. The controls above
+remain unapplied or unverified as stated. No settings, failed CI check or
+provider validation requirement was bypassed. No tag, GitHub release, Trusted
+Publishing dispatch or PyPI upload was attempted.
 
 Routine metadata preparation folds the documentation changes into 3.1.0,
 dates the prepared release consistently and preserves 11 August as the source
