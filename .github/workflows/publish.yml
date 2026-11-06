@@ -30,10 +30,26 @@ jobs:
           ref: ${{ github.event.release.tag_name || inputs.release_tag }}
           fetch-depth: 0
 
+      # Keep security tooling on the workflow revision even when retrying an
+      # immutable older release tag that predates these helper scripts.
+      - name: Check out trusted release security tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout: |
+            /scripts/bootstrap_pip.py
+            /scripts/audit_dependencies.py
+          sparse-checkout-cone-mode: false
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Bootstrap patched pip trust store
+        run: python .release-tools/scripts/bootstrap_pip.py
 
       - name: Verify exact release tag
         env:
@@ -73,7 +89,7 @@ jobs:
           exit 1
 
       - name: Install validation dependencies
-        run: python -m pip install ".[dev,dynamic]"
+        run: python -m pip install ".[dev,dynamic]" "certifi>=2026.10.19" "pip-audit>=2.10.1"
 
       - name: Validate source
         run: |
@@ -81,9 +97,7 @@ jobs:
           python -m pytest -q
           python -c "import frida; from debugger.engine import DebugEngine; assert DebugEngine().is_available"
           python -m bandit -q -r analysis debugger reporting storage ui main.py config.py --severity-level medium --confidence-level medium
-          python -m pip_audit --strict --requirement requirements.txt
-          python -m pip_audit --strict --requirement requirements-ai.txt
-          python -m pip_audit --strict --requirement requirements-dynamic.txt
+          python .release-tools/scripts/audit_dependencies.py
           python -c "import yara; yara.compile(filepath='examples/mock-output/aidebug-candidate.yar')"
           for script in debugger/scripts/*.js; do
             node --check "$script"
@@ -100,6 +114,7 @@ jobs:
       - name: Smoke-test built wheel
         run: |
           python -m venv /tmp/aidebug-wheel-smoke
+          /tmp/aidebug-wheel-smoke/bin/python .release-tools/scripts/bootstrap_pip.py
           /tmp/aidebug-wheel-smoke/bin/python -m pip install dist/*.whl
           /tmp/aidebug-wheel-smoke/bin/python -m pip check
           /tmp/aidebug-wheel-smoke/bin/aidebug --help >/dev/null

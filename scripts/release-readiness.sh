@@ -10,6 +10,7 @@ trap 'rm -rf "$work_dir"' EXIT
 
 "$python_bin" -m venv "$work_dir/gate-venv"
 gate_python="$work_dir/gate-venv/bin/python"
+"$gate_python" scripts/bootstrap_pip.py
 "$gate_python" -m pip install -e ".[dev,dynamic]"
 
 "$gate_python" scripts/check_release_metadata.py
@@ -22,9 +23,7 @@ gate_python="$work_dir/gate-venv/bin/python"
 "$gate_python" -m bandit -q -r analysis debugger learning reporting storage ui main.py config.py \
   --severity-level medium --confidence-level medium
 "$gate_python" -m pip check
-"$gate_python" -m pip_audit --strict --requirement requirements.txt
-"$gate_python" -m pip_audit --strict --requirement requirements-ai.txt
-"$gate_python" -m pip_audit --strict --requirement requirements-dynamic.txt
+"$gate_python" scripts/audit_dependencies.py
 "$gate_python" -c "import yara; yara.compile(filepath='examples/mock-output/aidebug-candidate.yar')"
 command -v node >/dev/null || {
   echo "release readiness error: Node.js is required to syntax-check Frida scripts" >&2
@@ -38,6 +37,7 @@ done
 "$gate_python" -m twine check --strict "$work_dir"/dist/*
 "$gate_python" scripts/check_distribution.py "$work_dir"/dist/*
 "$python_bin" -m venv "$work_dir/venv"
+"$work_dir/venv/bin/python" scripts/bootstrap_pip.py
 "$work_dir/venv/bin/python" -m pip install "$work_dir"/dist/*.whl
 "$work_dir/venv/bin/python" -m pip check
 "$work_dir/venv/bin/aidebug" --help >/dev/null

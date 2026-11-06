@@ -32,8 +32,14 @@ JavaScript.
 
 The script creates isolated validation and wheel-smoke virtual environments.
 
+The local gate bootstraps patched pip trust stores in both virtual environments
+before downloading packages. AI/dev installs require certifi >=2026.10.19.
+See [Python TLS trust remediation](docs/python-tls-security.md) for existing
+environments and the secure bootstrap rationale.
+
 The local gate checks release metadata, Ruff, tests, Bandit, installed
-dependencies, declared dependency vulnerabilities, distribution contents,
+dependencies, vulnerabilities in the installed third-party dependency graph,
+distribution contents,
 Twine metadata, installation/import of the Frida 17.x dynamic extra,
 installation from the built wheel, bundled runtime data, and a safe static parse
 of `/bin/true`. CI additionally scans repository history with Gitleaks. The

@@ -83,6 +83,10 @@ examples, Debian/Kali packaging metadata, a man page, and autopkgtest metadata.
 
 [How to install] -
 
+Use updated system certificates and pipx >=1.18.7. For the source installation,
+apply the [secure pip bootstrap](python-tls-security.md) in the new virtual
+environment before downloading dependencies; the historical tag has no helper.
+
 From the tagged PyPI release:
 
 ```bash
@@ -98,6 +102,7 @@ tar -xf v3.0.0.tar.gz
 cd AIDebug-3.0.0
 python3 -m venv .venv
 . .venv/bin/activate
+# Apply the linked hash-pinned pip bootstrap before this dependency install.
 pip install .
 aidebug --help
 ```

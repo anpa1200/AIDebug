@@ -55,12 +55,23 @@ analyst-review reporting.
 
 ### Published 3.0.0 package
 
-Install the stable package from PyPI:
+Install the stable package from PyPI in these three steps:
+
+1. Create and activate the intended environment:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+```
+
+2. Run the [version-aware secure pip bootstrap](docs/python-tls-security.md#secure-bootstrap)
+   in that environment. It preserves newer pip versions and verifies the pinned
+   wheel's hash when an upgrade is needed. Stop if it fails; do not continue to
+   package installation.
+
+3. Install the stable package:
+
+```bash
 python -m pip install 1200km-aidebug==3.0.0
 aidebug --version
 ```
@@ -69,13 +80,13 @@ Install optional capabilities as needed:
 
 ```bash
 # LLM provider clients and local validation of AI-generated YARA candidates
-python -m pip install "1200km-aidebug[ai]==3.0.0"
+python -m pip install "1200km-aidebug[ai]==3.0.0" "certifi>=2026.10.19"
 
 # Frida dynamic instrumentation
 python -m pip install "1200km-aidebug[dynamic]==3.0.0"
 
 # All optional Python integrations
-python -m pip install "1200km-aidebug[all]==3.0.0"
+python -m pip install "1200km-aidebug[all]==3.0.0" "certifi>=2026.10.19"
 ```
 
 ### Reviewed 3.1.0 source
@@ -91,13 +102,20 @@ cd AIDebug
 git checkout cd81ef242db0bcea3296970d45c241a4228d2d27
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+```
+
+Before installing dependencies, run the
+[version-aware secure pip bootstrap](docs/python-tls-security.md#secure-bootstrap)
+in this environment. The historical checkout does not include the current
+bootstrap helper. Stop if bootstrap fails. Continue only after it succeeds:
+
+```bash
 python -m pip install -e .
 aidebug --version
 ```
 
-From that checkout, add extras with `python -m pip install -e ".[ai]"`,
-`".[dynamic]"`, or `".[all]"`. Keep extras on the same installation track:
+From that checkout, add extras with `python -m pip install -e ".[ai]" "certifi>=2026.10.19"`,
+`".[dynamic]"`, or `".[all]" "certifi>=2026.10.19"`. Keep extras on the same installation track:
 installing `"1200km-aidebug[ai]==3.0.0"` over source 3.1 can replace it with
 the published 3.0 package.
 
@@ -110,6 +128,7 @@ git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
 python3 -m venv .venv
 source .venv/bin/activate
+python scripts/bootstrap_pip.py
 python -m pip install -e ".[dev,dynamic]"
 ```
 
@@ -345,10 +364,10 @@ credentials.
 
 ```bash
 # Published 3.0.0 installation:
-python -m pip install "1200km-aidebug[ai]==3.0.0"
+python -m pip install "1200km-aidebug[ai]==3.0.0" "certifi>=2026.10.19"
 ```
 
-For reviewed source 3.1, instead run `python -m pip install -e ".[ai]"` from
+For reviewed source 3.1, instead run `python -m pip install -e ".[ai]" "certifi>=2026.10.19"` from
 that checkout. A fresh wheel install does not put `.env.example` in your
 working directory. Create a private provider file outside sample directories:
 
