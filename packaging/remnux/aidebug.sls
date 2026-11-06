@@ -6,6 +6,8 @@
 # License: MIT: https://github.com/anpa1200/AIDebug/blob/main/LICENSE
 # Notes: aidebug
 # Historical proposal, not the accepted REMnux provisioning state.
+# Do not apply: this historical bootstrap predates the October 2026 CA fix.
+# Follow docs/python-tls-security.md for existing environments.
 # Upstream accepted an unpinned [ai] package with upgrades enabled in v2026.41.4.
 # See docs/remnux.md and packaging/remnux-submission.md for current evidence.
 

@@ -29,6 +29,9 @@ strings, and HTML analyst reports.
 
 ## Install
 
+Before running these commands, apply the [Python TLS trust update](../docs/python-tls-security.md)
+in the intended environment. Historical package releases do not update pip.
+
 ```bash
 pip install 1200km-aidebug
 aidebug --help

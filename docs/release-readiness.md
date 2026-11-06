@@ -18,6 +18,10 @@ it does not audit unrelated packages in the caller's active environment.
 
 The gate verifies:
 
+- a hash-pinned pip trust-store bootstrap in each new environment;
+- fixed certifi in AI/dev dependencies and a complete installed dependency
+  audit without pip-audit creating an unpatched resolver environment;
+
 - version consistency across Python, citation, changelog, Debian, man-page, and
   release-note metadata;
 - exact dependency-specifier consistency between `pyproject.toml` and

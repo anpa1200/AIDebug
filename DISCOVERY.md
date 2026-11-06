@@ -32,12 +32,17 @@ malware-analysis labs and requires analyst review before operational use.
 
 ## Install Block
 
+Before any package download, apply the [Python TLS trust update](docs/python-tls-security.md)
+to the new environment. The historical tag below does not contain the current
+bootstrap helper, so use the hash-pinned procedure there.
+
 ```bash
 git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
 git checkout v3.0.0
 python3 -m venv .venv
 source .venv/bin/activate
+# Securely bootstrap pip as described in the TLS trust update before continuing.
 python -m pip install -e .
 aidebug --help
 aidebug --binary /path/to/sample --offline --no-tui
@@ -49,7 +54,7 @@ Optional dynamic instrumentation support:
 pip install -e ".[dynamic]"
 ```
 
-Optional remote AI requires `pip install -e ".[ai]"`, an authorized
+Optional remote AI requires `pip install -e ".[ai]" "certifi>=2026.10.19"`, an authorized
 `ANTHROPIC_API_KEY`, and explicit cost acknowledgement for bulk commands.
 
 ## Safety Statement

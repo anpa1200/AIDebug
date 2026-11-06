@@ -29,6 +29,21 @@ inclusion does not publish 3.1 or enable its String Intelligence commands.
 For those, use a separate environment and the
 [reviewed source installation](../README.md#reviewed-310-source).
 
+## Python TLS trust update (6 November 2026)
+
+The upstream state still permits pip >=24.1.3 and does not enforce the patched
+certifi floor. The October emSign incident affects package-installation TLS
+clients as well as the GitHub publishing action. Updating the publishing action
+does not repair an existing `/opt/aidebug` environment, and upgrading AIDebug
+alone may leave an already-satisfied old certifi installed.
+
+Follow [the environment remediation procedure](python-tls-security.md#existing-remnux-environment)
+before package downloads or remote AI use. It upgrades pip securely, then
+requires certifi >=2026.10.19 without changing the AIDebug version. Apply official
+REMnux/OS certificate and Python security updates as well. These instructions do
+not claim that any user's VM has been checked or patched, or that the published
+AIDebug package was compromised.
+
 ## Verify the installed environment
 
 Follow the [official REMnux documentation](https://docs.remnux.org/) for

@@ -36,6 +36,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Bootstrap patched pip trust store
+        run: python scripts/bootstrap_pip.py
+
       - name: Install validation dependencies
         run: python -m pip install ".[dev]"
 
@@ -78,6 +81,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      - name: Bootstrap patched pip trust store
+        run: python scripts/bootstrap_pip.py
+
       - name: Install package
         run: python -m pip install ".[dev]"
 
@@ -97,6 +103,9 @@ jobs:
         with:
           python-version: "3.10"
           cache: pip
+
+      - name: Bootstrap patched pip trust store
+        run: python scripts/bootstrap_pip.py
 
       - name: Install declared Textual compatibility floor
         run: python -m pip install -e . "textual==8.2.8" "pytest>=8"
@@ -118,6 +127,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Bootstrap patched pip trust store
+        run: python scripts/bootstrap_pip.py
+
       - name: Install optional dynamic capability
         run: python -m pip install -e ".[dynamic]" "pytest>=8"
 
@@ -138,12 +150,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Audit declared runtime dependencies
+      - name: Bootstrap patched pip trust store
+        run: python scripts/bootstrap_pip.py
+
+      - name: Audit installed dependency graph
         run: |
-          python -m pip install "pip-audit>=2.7"
-          python -m pip_audit --strict --requirement requirements.txt
-          python -m pip_audit --strict --requirement requirements-ai.txt
-          python -m pip_audit --strict --requirement requirements-dynamic.txt
+          python -m pip install ".[all]" "pip-audit>=2.10.1" "certifi>=2026.10.19"
+          python -m pip check
+          python scripts/audit_dependencies.py
 
   build:
     runs-on: ubuntu-latest
@@ -156,8 +170,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Bootstrap patched pip trust store
+        run: python scripts/bootstrap_pip.py
+
       - name: Install build tools
-        run: python -m pip install "build>=1.2" "twine>=5" "yara-python>=4.5"
+        run: python -m pip install "build>=1.2" "twine>=5" "yara-python>=4.5" "certifi>=2026.10.19"
 
       - name: Build distributions
         run: python -m build
@@ -170,6 +187,7 @@ jobs:
       - name: Smoke-test built wheel
         run: |
           python -m venv /tmp/aidebug-wheel-smoke
+          /tmp/aidebug-wheel-smoke/bin/python scripts/bootstrap_pip.py
           /tmp/aidebug-wheel-smoke/bin/python -m pip install dist/*.whl
           /tmp/aidebug-wheel-smoke/bin/python -m pip check
           /tmp/aidebug-wheel-smoke/bin/aidebug --help >/dev/null

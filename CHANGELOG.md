@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Bootstrap patched pip CA bundles before CI and release package downloads,
+  require certifi >=2026.10.19 for AI/dev environments, and document remediation
+  of existing installations after the emSign CA incident.
+
 - Refreshed installation, safety, analyst workflow, manual, validation, and
   distribution documentation against the 3.1 article and October 2026 audit.
 - Documented REMnux inclusion in salt-states v2026.41.4 and its PyPI [ai] track.

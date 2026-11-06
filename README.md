@@ -55,12 +55,15 @@ analyst-review reporting.
 
 ### Published 3.0.0 package
 
-Install the stable package from PyPI:
+Install the stable package from PyPI. First follow the
+[Python TLS trust update](docs/python-tls-security.md) for every new or existing
+virtual environment. The hash-pinned bootstrap below is for an older pip;
+skip it when pip is already a stable version >=26.2.2 to avoid a downgrade.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+python -m pip --isolated --disable-pip-version-check install --no-index --no-deps --no-cache-dir "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
 python -m pip install 1200km-aidebug==3.0.0
 aidebug --version
 ```
@@ -69,13 +72,13 @@ Install optional capabilities as needed:
 
 ```bash
 # LLM provider clients and local validation of AI-generated YARA candidates
-python -m pip install "1200km-aidebug[ai]==3.0.0"
+python -m pip install "1200km-aidebug[ai]==3.0.0" "certifi>=2026.10.19"
 
 # Frida dynamic instrumentation
 python -m pip install "1200km-aidebug[dynamic]==3.0.0"
 
 # All optional Python integrations
-python -m pip install "1200km-aidebug[all]==3.0.0"
+python -m pip install "1200km-aidebug[all]==3.0.0" "certifi>=2026.10.19"
 ```
 
 ### Reviewed 3.1.0 source
@@ -91,13 +94,13 @@ cd AIDebug
 git checkout cd81ef242db0bcea3296970d45c241a4228d2d27
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+python -m pip --isolated --disable-pip-version-check install --no-index --no-deps --no-cache-dir "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
 python -m pip install -e .
 aidebug --version
 ```
 
-From that checkout, add extras with `python -m pip install -e ".[ai]"`,
-`".[dynamic]"`, or `".[all]"`. Keep extras on the same installation track:
+From that checkout, add extras with `python -m pip install -e ".[ai]" "certifi>=2026.10.19"`,
+`".[dynamic]"`, or `".[all]" "certifi>=2026.10.19"`. Keep extras on the same installation track:
 installing `"1200km-aidebug[ai]==3.0.0"` over source 3.1 can replace it with
 the published 3.0 package.
 
@@ -110,6 +113,7 @@ git clone https://github.com/anpa1200/AIDebug.git
 cd AIDebug
 python3 -m venv .venv
 source .venv/bin/activate
+python scripts/bootstrap_pip.py
 python -m pip install -e ".[dev,dynamic]"
 ```
 
@@ -345,10 +349,10 @@ credentials.
 
 ```bash
 # Published 3.0.0 installation:
-python -m pip install "1200km-aidebug[ai]==3.0.0"
+python -m pip install "1200km-aidebug[ai]==3.0.0" "certifi>=2026.10.19"
 ```
 
-For reviewed source 3.1, instead run `python -m pip install -e ".[ai]"` from
+For reviewed source 3.1, instead run `python -m pip install -e ".[ai]" "certifi>=2026.10.19"` from
 that checkout. A fresh wheel install does not put `.env.example` in your
 working directory. Create a private provider file outside sample directories:
 

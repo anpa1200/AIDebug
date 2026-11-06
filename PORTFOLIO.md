@@ -10,7 +10,7 @@ Role relevance: Malware triage, reverse engineering tooling, safe AI-assisted an
 
 ## Safe reproducible quickstart
 
-Run from the repository root. Python 3.10–3.13 with the project runtime dependencies installed. From a fresh checkout: create and activate a virtual environment, then `python -m pip install -e .`. Installation may download packages; the demo itself makes no provider calls. For a disconnected lab, install dependencies from an approved local wheel cache first.
+Run from the repository root. Python 3.10–3.13 with the project runtime dependencies installed. From a fresh checkout: create and activate a virtual environment, run `python scripts/bootstrap_pip.py`, then `python -m pip install -e .`. For a historical revision, use the [hash-pinned TLS bootstrap](docs/python-tls-security.md) instead. Installation may download packages; the demo itself makes no provider calls. For a disconnected lab, install dependencies from an approved local wheel cache first.
 
 ```bash
 python examples/portfolio_demo.py
