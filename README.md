@@ -55,15 +55,23 @@ analyst-review reporting.
 
 ### Published 3.0.0 package
 
-Install the stable package from PyPI. First follow the
-[Python TLS trust update](docs/python-tls-security.md) for every new or existing
-virtual environment. The hash-pinned bootstrap below is for an older pip;
-skip it when pip is already a stable version >=26.2.2 to avoid a downgrade.
+Install the stable package from PyPI in these three steps:
+
+1. Create and activate the intended environment:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip --isolated --disable-pip-version-check install --no-index --no-deps --no-cache-dir "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+```
+
+2. Run the [version-aware secure pip bootstrap](docs/python-tls-security.md#secure-bootstrap)
+   in that environment. It preserves newer pip versions and verifies the pinned
+   wheel's hash when an upgrade is needed. Stop if it fails; do not continue to
+   package installation.
+
+3. Install the stable package:
+
+```bash
 python -m pip install 1200km-aidebug==3.0.0
 aidebug --version
 ```
@@ -94,7 +102,14 @@ cd AIDebug
 git checkout cd81ef242db0bcea3296970d45c241a4228d2d27
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip --isolated --disable-pip-version-check install --no-index --no-deps --no-cache-dir "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+```
+
+Before installing dependencies, run the
+[version-aware secure pip bootstrap](docs/python-tls-security.md#secure-bootstrap)
+in this environment. The historical checkout does not include the current
+bootstrap helper. Stop if bootstrap fails. Continue only after it succeeds:
+
+```bash
 python -m pip install -e .
 aidebug --version
 ```

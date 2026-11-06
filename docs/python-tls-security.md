@@ -28,18 +28,43 @@ stable version, installs only the advisory's hash-pinned wheel when necessary,
 and verifies the result. It fails closed if installation or version checks fail.
 
 Published 3.0.0 packages and historical source revisions do not contain that
-helper. Check `python -m pip --version` in the intended environment first. Only
-if it is older than 26.2.2, run the advisory's hash-pinned bootstrap:
+helper. Run this standalone, version-aware bootstrap in the intended environment.
+It skips an already-patched stable pip and never downgrades a newer one:
 
 ```bash
-python -m pip --isolated --disable-pip-version-check install --no-index --no-deps --no-cache-dir "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+python - <<'PY'
+import importlib.metadata
+import re
+import subprocess
+import sys
+
+
+def patched(version):
+    match = re.fullmatch(r"(\d+)\.(\d+)(?:\.(\d+))?(?:\.post\d+)?(?:\+[a-zA-Z0-9.]+)?", version)
+    if match is None:
+        raise RuntimeError("Unrecognized pip version; review it before installing anything")
+    return tuple(int(part or 0) for part in match.groups()) >= (26, 2, 2)
+
+
+if not patched(importlib.metadata.version("pip")):
+    subprocess.run(
+        [sys.executable, "-m", "pip", "--isolated", "--disable-pip-version-check",
+         "install", "--no-index", "--no-deps", "--no-cache-dir", "--only-binary=:all:",
+         "https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"],
+        check=True,
+    )
+if not patched(importlib.metadata.version("pip")):
+    raise RuntimeError("pip is still below 26.2.2; stop before installing anything")
+print("Patched pip verified:", importlib.metadata.version("pip"))
+PY
 ```
 
 The SHA-256 is from the advisory, not from an untrusted download response. The
 bootstrap disables package-index resolution, dependency downloads, cache use,
-and pip's background version check. A failed hash or TLS check must stop the
-procedure; do not use `--trusted-host` or disable certificate verification.
-Do not rerun the fixed-version command on a newer pip: keep the newer version.
+and pip's background version check. An unrecognized pip version or failed hash,
+TLS, installation, or post-install check stops the bootstrap. If it fails, do not
+run subsequent installation steps; do not use `--trusted-host` or disable
+certificate verification.
 
 Once pip is patched, update the environment's separate certifi bundle:
 
@@ -63,8 +88,8 @@ Use the interpreter that owns AIDebug, not the system Python or another venv:
 ```
 
 With the privileges needed to update `/opt/aidebug`, apply the secure bootstrap
-above using `/opt/aidebug/bin/python3` instead of `python` if pip is below the
-floor. Then run:
+above using `/opt/aidebug/bin/python3` instead of `python`; it checks whether
+an upgrade is needed. Only after it succeeds, run:
 
 ```bash
 /opt/aidebug/bin/python3 -m pip install --upgrade "certifi>=2026.10.19"

@@ -1,4 +1,5 @@
 import importlib.metadata
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -146,3 +147,68 @@ def test_local_gate_bootstraps_both_environments():
     assert '"$work_dir/venv/bin/python" scripts/bootstrap_pip.py' in script
     assert '"$gate_python" scripts/audit_dependencies.py' in script
     assert "pip_audit --strict --requirement" not in script
+
+
+def documented_bootstrap():
+    guide = (ROOT / "docs/python-tls-security.md").read_text()
+    snippets = re.findall(r"python - <<'PY'\n(.*?)\nPY\n", guide, re.DOTALL)
+    assert len(snippets) == 1
+    return compile(snippets[0], "docs/python-tls-security.md", "exec")
+
+
+@pytest.mark.parametrize("version", ["26.2.2", "26.3", "27.0", "26.3+vendor.1"])
+def test_documented_bootstrap_preserves_patched_pip(monkeypatch, version):
+    monkeypatch.setattr(importlib.metadata, "version", lambda _: version)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("must not downgrade pip"))
+    exec(documented_bootstrap(), {})
+
+
+def test_documented_bootstrap_upgrades_old_pip_with_verified_hash(monkeypatch):
+    current = ["25.0.1"]
+    monkeypatch.setattr(importlib.metadata, "version", lambda _: current[0])
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs == {"check": True}
+        assert command[-1] == bootstrap_pip.PIP_WHEEL
+        assert {"--isolated", "--disable-pip-version-check", "--no-index", "--no-deps", "--no-cache-dir"} <= set(command)
+        current[0] = "26.2.2"
+
+    monkeypatch.setattr(subprocess, "run", run)
+    exec(documented_bootstrap(), {})
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("version", ["26.2.2rc1", "26.4.dev1", "unknown"])
+def test_documented_bootstrap_rejects_unknown_versions(monkeypatch, version):
+    monkeypatch.setattr(importlib.metadata, "version", lambda _: version)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("unverified pip version"))
+    with pytest.raises(RuntimeError, match="Unrecognized pip version"):
+        exec(documented_bootstrap(), {})
+
+
+def test_documented_bootstrap_propagates_install_failure(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "version", lambda _: "25.0.1")
+
+    def fail(command, **kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        exec(documented_bootstrap(), {})
+
+
+def test_documented_bootstrap_checks_installed_result(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "version", lambda _: "25.0.1")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: None)
+    with pytest.raises(RuntimeError, match="still below 26.2.2"):
+        exec(documented_bootstrap(), {})
+
+
+def test_readme_separates_guarded_bootstrap_from_installation():
+    readme = (ROOT / "README.md").read_text()
+    assert bootstrap_pip.PIP_WHEEL not in readme
+    assert readme.count("[version-aware secure pip bootstrap](docs/python-tls-security.md#secure-bootstrap)") == 2
+    assert "Stop if it fails; do not continue" in readme
+    assert "Stop if bootstrap fails. Continue only after it succeeds" in readme
